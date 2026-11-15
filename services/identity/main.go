@@ -64,6 +64,13 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	dev := cfg.DevOTP()
+	if dev.Enabled() {
+		// Kod va telefonlar logga yozilmaydi — faqat soni.
+		log.Warn("DEV_MODE yoqilgan: ro'yxatdagi telefon/email'lar uchun OTP belgilangan kod (FAQAT dev/test)",
+			"app_env", cfg.AppEnv, "test_phones", len(dev.Phones), "test_emails", len(dev.Emails))
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -111,6 +118,7 @@ func run(log *slog.Logger) error {
 		AccessTTL: cfg.AccessTTL, RefreshTTL: cfg.RefreshTTL, AdminTTL: cfg.AdminTTL,
 		OTPTTL: cfg.OTPTTL, OTPResend: cfg.OTPResend, LimitWindow: cfg.OTPLimitWindow,
 		OTPMaxAttempts: cfg.OTPMaxAttempts, PhoneLimit: cfg.OTPPhoneLimit, IPLimit: cfg.OTPIPLimit,
+		Dev: dev,
 	}, repo, cache.NewOTP(rdb), cache.NewBlacklist(rdb), tokens, notifier, log)
 	svc.OnEvent(relay.Kick)
 

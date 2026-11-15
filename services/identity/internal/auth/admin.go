@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/izgo/identity/internal/apperr"
-	"github.com/izgo/identity/internal/cache"
 	"github.com/izgo/identity/internal/token"
 	"github.com/izgo/shared/roles"
 )
@@ -34,8 +33,9 @@ func admEmailKey(cid string) string { return "adm:email:" + cid }
 func admSMSKey(cid string) string   { return "adm:sms:" + cid }
 
 type Challenge struct {
-	ID        uuid.UUID
-	ExpiresIn int
+	ID         uuid.UUID
+	ExpiresIn  int
+	CodeLength int // keyingi qadamda kutiladigan kod xonalari (soxta challenge'da ham bir xil)
 }
 
 func NormalizeEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
@@ -59,7 +59,7 @@ func (s *Service) AdminLoginEmail(ctx context.Context, email, ip string) (Challe
 	if err != nil {
 		return Challenge{}, fmt.Errorf("auth: uuid: %w", err)
 	}
-	code, err := cache.NewCode(otpDigits)
+	code, err := s.codeForEmail(email)
 	if err != nil {
 		return Challenge{}, err
 	}
@@ -79,7 +79,7 @@ func (s *Service) AdminLoginEmail(ctx context.Context, email, ip string) (Challe
 			return Challenge{}, fmt.Errorf("auth: email: %w", err)
 		}
 	}
-	return Challenge{ID: cid, ExpiresIn: int(ttl.Seconds())}, nil
+	return Challenge{ID: cid, ExpiresIn: int(ttl.Seconds()), CodeLength: otpDigits}, nil
 }
 
 func (s *Service) loadChallenge(ctx context.Context, cid uuid.UUID) (string, error) {
@@ -115,7 +115,7 @@ func (s *Service) AdminLoginSMS(ctx context.Context, cid uuid.UUID, emailCode, p
 		return Challenge{}, apperr.OTPInvalid(0)
 	}
 
-	code, err := cache.NewCode(otpDigits)
+	code, err := s.codeForPhone(staff.Phone)
 	if err != nil {
 		return Challenge{}, err
 	}
@@ -125,7 +125,7 @@ func (s *Service) AdminLoginSMS(ctx context.Context, cid uuid.UUID, emailCode, p
 	if err := s.notify.SendSMS(ctx, staff.Phone, code); err != nil {
 		return Challenge{}, fmt.Errorf("auth: sms: %w", err)
 	}
-	return Challenge{ID: cid, ExpiresIn: int(s.opt.OTPTTL.Seconds())}, nil
+	return Challenge{ID: cid, ExpiresIn: int(s.opt.OTPTTL.Seconds()), CodeLength: otpDigits}, nil
 }
 
 // AdminLoginPhone — email'siz operator uchun kirish: telefon -> SMS kod (email qadamisiz).
@@ -149,7 +149,7 @@ func (s *Service) AdminLoginPhone(ctx context.Context, phone, ip string) (Challe
 	if err != nil {
 		return Challenge{}, fmt.Errorf("auth: uuid: %w", err)
 	}
-	code, err := cache.NewCode(otpDigits)
+	code, err := s.codeForPhone(phone)
 	if err != nil {
 		return Challenge{}, err
 	}
@@ -169,7 +169,7 @@ func (s *Service) AdminLoginPhone(ctx context.Context, phone, ip string) (Challe
 			return Challenge{}, fmt.Errorf("auth: sms: %w", err)
 		}
 	}
-	return Challenge{ID: cid, ExpiresIn: int(ttl.Seconds())}, nil
+	return Challenge{ID: cid, ExpiresIn: int(ttl.Seconds()), CodeLength: otpDigits}, nil
 }
 
 type AdminToken struct {
@@ -217,6 +217,21 @@ func (s *Service) AdminLoginVerify(ctx context.Context, cid uuid.UUID, smsCode s
 		s.log.WarnContext(ctx, "last_login yangilanmadi", "staff_id", staff.ID, "err", err)
 	}
 	return AdminToken{AccessToken: tok, ExpiresIn: int(s.opt.AdminTTL.Seconds())}, nil
+}
+
+// AdminLogout — admin sessiyasini serverda bekor qiladi: tokendagi sid Redis blacklist'ga (bl:sid:<sid>) yoziladi.
+// Faqat admin access token (aud=admin, typ=access) qabul qilinadi; client/driver tokenlari 401.
+// Admin tokenida refresh yo'q, shuning uchun yozuv AdminTTL + 1 daqiqa saqlanadi (AccessTTL emas).
+// Idempotent: allaqachon bekor qilingan, lekin imzosi va muddati yaroqli token bilan qayta chaqiruv ham muvaffaqiyatli.
+func (s *Service) AdminLogout(ctx context.Context, raw string) error {
+	c, err := s.tokens.Parse(raw, token.Access, token.AudAdmin)
+	if err != nil {
+		return apperr.Unauthorized()
+	}
+	if err := s.bl.Revoke(ctx, s.opt.AdminTTL+time.Minute, c.SID); err != nil {
+		return fmt.Errorf("auth: admin logout: %w", err)
+	}
+	return nil
 }
 
 // EnsureBootstrapStaff — birinchi superadminni env orqali yaratadi (mavjud bo'lsa tegmaydi).

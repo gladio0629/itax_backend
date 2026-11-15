@@ -95,6 +95,7 @@ func (d *otpRequestDTO) validate() map[string]string {
 type otpRequestResp struct {
 	ExpiresIn   int `json:"expires_in"`
 	ResendAfter int `json:"resend_after"`
+	CodeLength  int `json:"code_length"` // server yaratgan kod xonalari soni (klient kiritish maydoni uchun)
 }
 
 type otpVerifyDTO struct {
@@ -187,6 +188,11 @@ func (d *adminVerifyDTO) validate() map[string]string {
 type challengeResp struct {
 	ChallengeID uuid.UUID `json:"challenge_id"`
 	ExpiresIn   int       `json:"expires_in"`
+	CodeLength  int       `json:"code_length"` // keyingi qadamda kutiladigan kod xonalari soni
+}
+
+func newChallengeResp(ch auth.Challenge) challengeResp {
+	return challengeResp{ChallengeID: ch.ID, ExpiresIn: ch.ExpiresIn, CodeLength: ch.CodeLength}
 }
 
 type adminTokenResp struct {

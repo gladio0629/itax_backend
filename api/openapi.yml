@@ -208,6 +208,21 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
+  /admin/v1/auth/logout:
+    post:
+      tags: [Admin Auth]
+      summary: Admin chiqishi — token serverda bekor qilinadi
+      description: |
+        `Authorization: Bearer <admin access token>`. Token sessiyasi (`sid`) serverda bekor qilinadi: shundan keyin
+        shu token bilan har qanday `/admin/v1/*` so'rovi `401`. Tana yo'q (yuborilsa e'tiborsiz). Idempotent: bekor
+        qilingan, lekin muddati o'tmagan token bilan qayta chaqiruv ham `204`. Yo'lovchi/haydovchi tokeni va refresh token — `401`.
+      operationId: adminLogout
+      security: [{ adminBearer: [] }]
+      responses:
+        '204': { description: Sessiya bekor qilindi }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        default: { $ref: '#/components/responses/InternalError' }
+
   # =================================================================== DRIVER
   /api/v1/drivers/me:
     get:
@@ -953,46 +968,52 @@ paths:
       summary: Real-vaqt bildirishnomalar (WebSocket)
       operationId: notificationsWebSocket
       description: |
-        WebSocket ulanish (`ws://localhost:8000/ws?token=<access_token>`, Kong → notification:8016).
-        OpenAPI WebSocket'ni to'g'ridan-to'g'ri ifodalay olmaydi, shuning uchun bu yerda HTTP Upgrade so'rovi
-        sifatida tavsiflangan. Brauzer/mobil WS API sarlavha qo'ya olmaydi, shuning uchun access token
-        `Authorization` sarlavhasida emas, `token` query parametrida yuboriladi. Notification servisi tokenni logga yozmaydi, lekin Kong access log'i
-        so'rov qatorini query bilan birga yozadi.
+        WebSocket ulanish (`wss://<api>/ws`, Kong → notification:8016). Hodisalar ro'yxati va payload'lari:
+        `docs/websocket-events.md`. Token URL'da yuborilmaydi (Kong access log'i so'rov qatorini yozadi).
 
-        **Ulanishdan oldin tekshiruv**
-        - Token ulanish ochilishidan OLDIN tekshiriladi: yo'q yoki noto'g'ri/muddati o'tgan bo'lsa — `401`, ulanish ochilmaydi.
-        - Bitta foydalanuvchiga bir vaqtda `WS_MAX_CONNS` (default 3) tagacha ulanish. Ortig'i —
-          `403 FORBIDDEN` (`reason: ws_connection_limit`).
+        **Autentifikatsiya** (ustuvorlik tartibida)
+        1. **Subprotocol (tavsiya):** `new WebSocket(url, ["izgo.v1", "bearer.<access_token>"])` →
+           `Sec-WebSocket-Protocol: izgo.v1, bearer.<token>`. Token ulanishdan OLDIN tekshiriladi: noto'g'ri/muddati o'tgan/
+           bekor qilingan — `401`, ulanish ochilmaydi. Server faqat `izgo.v1` ni qaytaradi (bearer qismini hech qachon).
+           `izgo.v1` siz `bearer.`, bir nechta yoki bo'sh `bearer.` — `401`.
+        2. **Birinchi xabar:** token subprotocol'da ham, query'da ham bo'lmasa ulanish ochiladi (`izgo.v1` taklif qilingan bo'lsa
+           qaytariladi) va klient `WS_AUTH_TIMEOUT` (default 5s) ichida bitta text frame yuboradi:
+           `{"type":"auth","token":"<access_token>"}` (≤ 8 KiB). Muvaffaqiyat: server `{"type":"auth.ok"}` yuboradi.
+           Yopish kodlari: `4401 auth_timeout`, `4401 token_invalid`, `1008 auth_malformed`, `4403 ws_connection_limit`,
+           `1011 internal_error`.
+        3. **Eskirgan `?token=` (deprecated):** faqat `WS_ALLOW_QUERY_TOKEN=true` (hozircha default) bo'lganda ishlaydi;
+           frontend 1- yoki 2-usulga o'tgach o'chiriladi (`false` → `401`).
 
-        **Server → klient xabarlari** (text frame, JSON; barcha qiymatlar string). Foydalanuvchi faqat o'z
-        xabarlarini oladi:
-        ```json
-        { "type": "order.accepted", "id": "<uuid>", "status": "accepted", "order_id": "<uuid>" }
-        ```
-        - `type`: `order.created` | `offer.created` | `order.accepted` | `trip.completed` |
-          `wallet.limit_reached` | `driver.approved`
-        - `id`: hodisaning asosiy obyekti — `order_id`, `offer_id` (haydovchiga yangi taklif), `trip_id`,
-          `wallet_id` yoki `driver_id`.
-        - `status` va `order_id` — faqat buyurtma holati o'zgarganda: `order.created` → `searching`,
-          `order.accepted` → `accepted`, `trip.completed` → `completed`.
+        **Origin:** brauzer ulanishlari `WS_ALLOWED_ORIGINS` dagi frontend domenlaridan bo'lishi kerak (aks holda `403`,
+        matnli javob). Origin sarlavhasisiz (mobil ilova) ulanishlar o'tadi.
 
-        Batafsil matn uchun `GET /api/v1/notifications` ishlatiladi. Foydalanuvchida ochiq WS ulanishi
-        bo'lmasa, xabar push orqali yuboriladi.
+        **Ulanish limiti:** bitta foydalanuvchiga bir vaqtda `WS_MAX_CONNS` (default 3) tagacha. Ortig'i — `403 FORBIDDEN`
+        (`reason: ws_connection_limit`) yoki birinchi xabar usulida `4403`.
 
-        **Klient → server:** ma'lumot yuborilmaydi. Klient ma'lumot frame'i yuborsa, ulanish `1008`
-        (policy violation) bilan yopiladi. Server har `WS_PING_INTERVAL` (default 25s) da ping yuboradi.
+        **Server → klient:** text frame, JSON, faqat foydalanuvchining o'z xabarlari:
+        `{ "type": "order.accepted", "id": "<uuid>", "status": "accepted", "order_id": "<uuid>" }`. Matn uchun
+        `GET /api/v1/notifications`. Ochiq ulanish bo'lmasa — push.
 
-        **Yopish kodlari**
-        - `4401 token_expired`: access token muddati tugadi. Tokenni yangilab (`/api/v1/auth/token/refresh`), qayta ulaning.
-        - `4401 session_revoked`: sessiya bekor qilindi (logout). Bu har `WS_REVOKE_CHECK` (default 30s) da tekshiriladi.
-        - `1001 server_shutdown`: server to'xtamoqda, qayta ulanish kerak.
+        **Klient → server:** autentifikatsiyadan keyin ma'lumot yuborilmaydi; yuborilsa `1008`. Server har `WS_PING_INTERVAL`
+        (default 25s) da ping yuboradi.
+
+        **Yopish kodlari (ulanishdan keyin)**
+        - `4401 token_expired`: access token muddati tugadi — yangilab qayta ulaning.
+        - `4401 session_revoked`: sessiya bekor qilindi (logout).
+        - `1001 server_shutdown`: server to'xtamoqda, qayta ulaning.
         - `1008`: klient ma'lumot yubordi.
       security: []
       parameters:
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: false
+          description: '`izgo.v1, bearer.<access_token>` (1-usul)'
+          schema: { type: string }
         - name: token
           in: query
-          required: true
-          description: Identity chiqargan access token (yo'lovchi yoki haydovchi)
+          required: false
+          deprecated: true
+          description: Eskirgan usul (faqat `WS_ALLOW_QUERY_TOKEN=true` da). Yangi klientlar ishlatmaydi
           schema: { type: string }
         - name: Upgrade
           in: header
@@ -1004,14 +1025,15 @@ paths:
           schema: { type: string, enum: [Upgrade] }
       responses:
         '101':
-          description: Switching Protocols — WebSocket ulanishi ochildi
+          description: Switching Protocols — WebSocket ulanishi ochildi (`Sec-WebSocket-Protocol` = `izgo.v1`, agar taklif qilingan bo'lsa)
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403':
-          description: FORBIDDEN — foydalanuvchi ulanishlar limitiga yetdi
+          description: FORBIDDEN — ulanishlar limiti yoki ruxsat etilmagan Origin
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
               example: { error: { key: FORBIDDEN, params: { reason: ws_connection_limit } } }
+        '426': { description: Upgrade sarlavhalarisiz oddiy HTTP so'rov }
         default: { $ref: '#/components/responses/InternalError' }
 
   # ================================================================== PROFILE
@@ -2093,6 +2115,7 @@ components:
       properties:
         expires_in: { type: integer, description: Kodning amal qilish muddati (soniya), readOnly: true }
         resend_after: { type: integer, description: Qayta so'rash mumkin bo'lgan vaqt (soniya), readOnly: true }
+        code_length: { type: integer, readOnly: true, example: 6, description: "Yuborilgan kod uzunligi (raqamlar soni); klient shuncha katak ko'rsatadi" }
 
     OtpVerify:
       type: object
@@ -2132,6 +2155,7 @@ components:
       properties:
         challenge_id: { $ref: '#/components/schemas/Uuid' }
         expires_in: { type: integer, readOnly: true }
+        code_length: { type: integer, readOnly: true, example: 6, description: Yuborilgan kod uzunligi }
 
     AdminLoginSms:
       type: object

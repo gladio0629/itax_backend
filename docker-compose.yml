@@ -142,6 +142,14 @@ services:
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
       EMAIL_API_KEY: ${EMAIL_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-onboarding@resend.dev}
+      # Muhit nomi: production/prod bo'lsa DEV_MODE bilan servis ishga tushmaydi
+      APP_ENV: ${APP_ENV:-development}
+      # FAQAT lokal ishlab chiqish: ro'yxatdagi test telefon/email'lar uchun doimiy OTP (docs/dev-testing.md).
+      # DEV_MODE=true + APP_ENV=production yoki SMS_MODE/EMAIL_MODE=real bo'lsa identity ishga tushmaydi.
+      DEV_MODE: ${DEV_MODE:-false}
+      DEV_OTP_CODE: ${DEV_OTP_CODE:-}
+      DEV_TEST_PHONES: ${DEV_TEST_PHONES:-}
+      DEV_TEST_EMAILS: ${DEV_TEST_EMAILS:-}
     volumes:
       - ./secrets/jwt:/run/secrets/jwt:ro
     expose: ["8010"]
@@ -341,6 +349,7 @@ services:
       start_period: 20s
     depends_on:
       postgres: { condition: service_healthy }
+      # admin logout: bekor qilingan sessiyalar (bl:sid:*) Redis'da tekshiriladi
       redis: { condition: service_healthy }
       nats: { condition: service_started }
       identity: { condition: service_healthy }
@@ -395,6 +404,11 @@ services:
       SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-https://smsxabarnoma.uz/api/v1}
       SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
       WS_MAX_CONNS: ${WS_MAX_CONNS:-3}
+      # WS auth: subprotocol "izgo.v1, bearer.<token>" yoki birinchi xabar. Eski ?token= frontend o'tguncha yoqiq.
+      WS_AUTH_TIMEOUT: ${WS_AUTH_TIMEOUT:-5s}
+      WS_ALLOW_QUERY_TOKEN: ${WS_ALLOW_QUERY_TOKEN:-true}
+      # Brauzer Origin host'lari (vergul bilan, masalan izgo-client.vercel.app,localhost:*); bo'sh = faqat Origin=Host
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
     expose: ["8016"]

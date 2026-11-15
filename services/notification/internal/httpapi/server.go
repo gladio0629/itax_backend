@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,6 +37,12 @@ type Options struct {
 	WSMaxConns     int
 	WSRevokeCheck  time.Duration
 	WSPingInterval time.Duration
+	// WSAuthTimeout — birinchi xabar bilan autentifikatsiya kutish vaqti (<= 0 bo'lsa 5s).
+	WSAuthTimeout time.Duration
+	// WSAllowQueryToken — eski ?token= usuliga ruxsat (nol qiymat — o'chiq).
+	WSAllowQueryToken bool
+	// WSAllowedOrigins — websocket.AcceptOptions.OriginPatterns.
+	WSAllowedOrigins []string
 }
 
 type Server struct {
@@ -47,9 +54,14 @@ type Server struct {
 	tokens [][]byte
 	log    *slog.Logger
 	now    func() time.Time
+
+	queryTokenUses atomic.Int64 // eskirgan ?token= ishlatilishlar soni (deprecation hisoblagichi)
 }
 
 func New(st *store.Store, rdb *redis.Client, ver *authn.Verifier, sender sms.Sender, opt Options, log *slog.Logger) *Server {
+	if opt.WSAuthTimeout <= 0 {
+		opt.WSAuthTimeout = 5 * time.Second
+	}
 	s := &Server{st: st, rdb: rdb, ver: ver, sms: sender, opt: opt, log: log, now: time.Now}
 	for _, t := range opt.InternalTokens {
 		s.tokens = append(s.tokens, []byte(strings.TrimSpace(t)))
@@ -368,7 +380,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if r.URL.Path == "/healthz" {
 			return
 		}
-		// Faqat yo'l loglanadi: /ws?token=... dagi JWT query'si loglarga tushmaydi.
+		// Faqat yo'l loglanadi: query (eski /ws?token=...) va sarlavhalar (Sec-WebSocket-Protocol: bearer.<jwt>) loglarga tushmaydi.
 		s.log.InfoContext(r.Context(), "http", "method", r.Method, "path", r.URL.Path, "status", sw.status,
 			"dur_ms", time.Since(start).Milliseconds(), "request_id", requestID(r.Context()))
 	})

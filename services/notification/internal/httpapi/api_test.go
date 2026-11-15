@@ -89,11 +89,14 @@ type opts struct {
 	revokeCheck time.Duration
 	logSMSText  bool
 	smsSender   sms.Sender // nil => sms.Mock
+	authTimeout time.Duration
+	noQueryTok  bool // WS_ALLOW_QUERY_TOKEN=false
+	origins     []string
 }
 
 func newEnv(t *testing.T, mut ...func(*opts)) *env {
 	t.Helper()
-	o := opts{maxPerUser: 500, revokeCheck: 100 * time.Millisecond}
+	o := opts{maxPerUser: 500, revokeCheck: 100 * time.Millisecond, authTimeout: 5 * time.Second}
 	for _, m := range mut {
 		m(&o)
 	}
@@ -111,7 +114,8 @@ func newEnv(t *testing.T, mut ...func(*opts)) *env {
 		sender = o.smsSender
 	}
 	api := httpapi.New(e.st, rdb, authn.NewVerifier(pk, issuer, rdb), sender,
-		httpapi.Options{InternalTokens: []string{internalToken}, WSMaxConns: 3, WSRevokeCheck: o.revokeCheck, WSPingInterval: time.Minute}, log)
+		httpapi.Options{InternalTokens: []string{internalToken}, WSMaxConns: 3, WSRevokeCheck: o.revokeCheck, WSPingInterval: time.Minute,
+			WSAuthTimeout: o.authTimeout, WSAllowQueryToken: !o.noQueryTok, WSAllowedOrigins: o.origins}, log)
 	e.srv = httptest.NewServer(api.Handler())
 	t.Cleanup(e.srv.Close)
 	return e

@@ -4,9 +4,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/izgo/identity/internal/auth"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -62,7 +64,22 @@ type Config struct {
 	EmailProvider string `envconfig:"EMAIL_PROVIDER" default:"resend"`
 	EmailAPIKey   string `envconfig:"EMAIL_API_KEY"`
 	EmailFrom     string `envconfig:"EMAIL_FROM" default:"onboarding@resend.dev"`
+
+	// AppEnv — muhit nomi. production (yoki prod) bo'lsa DEV_MODE yoqib bo'lmaydi.
+	AppEnv string `envconfig:"APP_ENV" default:"development"`
+
+	// Dev rejim (FAQAT lokal/test): ro'yxatdagi telefon/email'lar uchun OTP tasodifiy emas, DEV_OTP_CODE bo'ladi.
+	// DEV_MODE=true bo'lsa APP_ENV=production, SMS_MODE=real yoki EMAIL_MODE=real bilan servis ishga tushmaydi.
+	DevMode       bool     `envconfig:"DEV_MODE" default:"false"`
+	DevOTPCode    string   `envconfig:"DEV_OTP_CODE"`
+	DevTestPhones []string `envconfig:"DEV_TEST_PHONES"`
+	DevTestEmails []string `envconfig:"DEV_TEST_EMAILS"`
 }
+
+var (
+	devPhoneRe = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`) // E.164
+	digitsRe   = regexp.MustCompile(`^[0-9]+$`)
+)
 
 // Load — muhitdan o'qiydi va tekshiradi.
 func Load() (Config, error) {
@@ -110,6 +127,9 @@ func (c Config) validate() error {
 			break
 		}
 	}
+	if c.DevMode {
+		errs = append(errs, c.validateDev()...)
+	}
 	if (c.AdminBootstrapEmail == "") != (c.AdminBootstrapPhone == "") {
 		errs = append(errs, errors.New("ADMIN_BOOTSTRAP_EMAIL va ADMIN_BOOTSTRAP_PHONE birga berilishi kerak"))
 	}
@@ -130,6 +150,62 @@ func (c Config) validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateDev — DEV_MODE=true uchun xavfsizlik va format tekshiruvlari (fail closed: xato bo'lsa servis ishga tushmaydi).
+func (c Config) validateDev() []error {
+	var errs []error
+	if env := strings.ToLower(strings.TrimSpace(c.AppEnv)); env == "production" || env == "prod" {
+		errs = append(errs, errors.New("DEV_MODE=true APP_ENV=production bilan taqiqlangan"))
+	}
+	if isReal(c.SMSMode) {
+		errs = append(errs, errors.New("DEV_MODE=true SMS_MODE=real bilan taqiqlangan"))
+	}
+	if isReal(c.EmailMode) {
+		errs = append(errs, errors.New("DEV_MODE=true EMAIL_MODE=real bilan taqiqlangan"))
+	}
+	if code := strings.TrimSpace(c.DevOTPCode); len(code) != auth.OTPLength || !digitsRe.MatchString(code) {
+		errs = append(errs, fmt.Errorf("DEV_MODE=true uchun DEV_OTP_CODE aynan %d ta raqam bo'lishi kerak", auth.OTPLength))
+	}
+	for _, p := range cleanList(c.DevTestPhones) {
+		if !devPhoneRe.MatchString(p) {
+			errs = append(errs, errors.New("DEV_TEST_PHONES: har bir qiymat E.164 formatida bo'lishi kerak (+998901234567)"))
+			break
+		}
+	}
+	for _, e := range cleanList(c.DevTestEmails) {
+		if !strings.Contains(e, "@") {
+			errs = append(errs, errors.New("DEV_TEST_EMAILS: noto'g'ri email"))
+			break
+		}
+	}
+	return errs
+}
+
+// DevOTP — auth.Options.Dev uchun. DEV_MODE=false bo'lsa nol qiymat (ro'yxatlar va kod e'tiborsiz qoldiriladi).
+func (c Config) DevOTP() auth.DevOTP {
+	if !c.DevMode {
+		return auth.DevOTP{}
+	}
+	d := auth.DevOTP{Code: strings.TrimSpace(c.DevOTPCode), Phones: map[string]struct{}{}, Emails: map[string]struct{}{}}
+	for _, p := range cleanList(c.DevTestPhones) {
+		d.Phones[p] = struct{}{}
+	}
+	for _, e := range cleanList(c.DevTestEmails) {
+		d.Emails[auth.NormalizeEmail(e)] = struct{}{}
+	}
+	return d
+}
+
+// cleanList — vergul bilan ajratilgan qiymatlar: bo'sh joylar olib tashlanadi, bo'sh elementlar tashlab yuboriladi.
+func cleanList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // validMode — bo'sh qiymat mock deb olinadi (compose'da `${SMS_MODE:-}` bo'sh satr berishi mumkin).

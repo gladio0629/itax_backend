@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -31,6 +32,15 @@ type Config struct {
 	WSMaxConns     int           `envconfig:"WS_MAX_CONNS" default:"3"`
 	WSRevokeCheck  time.Duration `envconfig:"WS_REVOKE_CHECK" default:"30s"`
 	WSPingInterval time.Duration `envconfig:"WS_PING_INTERVAL" default:"25s"`
+	// WSAuthTimeout — birinchi xabar bilan autentifikatsiya ({"type":"auth","token":...}) uchun kutish vaqti.
+	WSAuthTimeout time.Duration `envconfig:"WS_AUTH_TIMEOUT" default:"5s"`
+	// WSAllowQueryToken — eski `GET /ws?token=` usuli (token Kong access loglariga tushadi). Frontend
+	// Sec-WebSocket-Protocol yoki auth xabariga o'tgach false qilinadi; false bo'lsa ?token= so'rovi 401.
+	WSAllowQueryToken bool `envconfig:"WS_ALLOW_QUERY_TOKEN" default:"true"`
+	// WSAllowedOrigins — boshqa domendagi brauzer ilovalari uchun ruxsat etilgan Origin host naqshlari
+	// (path.Match, katta-kichik harf farqsiz, port bilan: "izgo-client.example.app", "localhost:*").
+	// Bo'sh — faqat Origin host == Host. Origin sarlavhasiz so'rovlar (mobil ilovalar) har doim o'tadi.
+	WSAllowedOrigins []string `envconfig:"WS_ALLOWED_ORIGINS"`
 
 	// Mock SMS: parametrlarni (masalan OTP kodni) logga yozish — FAQAT dev uchun.
 	MockLogSMSParams bool `envconfig:"MOCK_LOG_SMS_PARAMS" default:"false"`
@@ -61,7 +71,13 @@ func Load() (Config, error) {
 			break
 		}
 	}
-	if c.NotificationTTL <= 0 || c.MaxPerUser < 1 || c.MaxDevices < 1 || c.WSMaxConns < 1 || c.WSRevokeCheck <= 0 || c.WSPingInterval <= 0 {
+	c.WSAllowedOrigins = cleanList(c.WSAllowedOrigins)
+	for _, p := range c.WSAllowedOrigins {
+		if _, err := path.Match(p, ""); err != nil || p == "*" {
+			errs = append(errs, fmt.Errorf("WS_ALLOWED_ORIGINS: noto'g'ri naqsh %q (\"*\" taqiqlangan)", p))
+		}
+	}
+	if c.NotificationTTL <= 0 || c.MaxPerUser < 1 || c.MaxDevices < 1 || c.WSMaxConns < 1 || c.WSRevokeCheck <= 0 || c.WSPingInterval <= 0 || c.WSAuthTimeout <= 0 {
 		errs = append(errs, errors.New("TTL, limitlar va intervallar musbat bo'lishi kerak"))
 	}
 	switch strings.ToLower(strings.TrimSpace(c.SMSMode)) {
@@ -77,4 +93,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	return c, nil
+}
+
+// cleanList — vergul bilan ajratilgan qiymatlar: bo'sh joylar olib tashlanadi, bo'sh elementlar tashlab yuboriladi.
+func cleanList(in []string) []string {
+	var out []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

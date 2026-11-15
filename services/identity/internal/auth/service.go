@@ -14,13 +14,48 @@ import (
 	"github.com/izgo/identity/internal/token"
 )
 
-const otpDigits = 6
+// OTPLength — server yaratadigan (va kutadigan) OTP kodi xonalari soni. Javoblarda `code_length` sifatida qaytadi.
+const OTPLength = 6
+
+const otpDigits = OTPLength
 
 type Options struct {
 	AccessTTL, RefreshTTL, AdminTTL time.Duration
 	OTPTTL, OTPResend, LimitWindow  time.Duration
 	OTPMaxAttempts                  int
 	PhoneLimit, IPLimit             int
+	// Dev — faqat DEV_MODE=true bo'lganda to'ldiriladi (config.DevOTP). Nol qiymat — o'chirilgan.
+	Dev DevOTP
+}
+
+// DevOTP — dev/test uchun belgilangan OTP: ro'yxatdagi telefon/email'ga tasodifiy kod o'rniga Code saqlanadi.
+// Rate limit, urinishlar, TTL va cooldown o'zgarmaydi. Production'da config.Load buni yoqishga yo'l qo'ymaydi.
+type DevOTP struct {
+	Code   string              // bo'sh — o'chirilgan
+	Phones map[string]struct{} // E.164 (+998...)
+	Emails map[string]struct{} // NormalizeEmail qilingan
+}
+
+// Enabled — dev OTP yoqilganmi.
+func (d DevOTP) Enabled() bool { return d.Code != "" }
+
+// codeForPhone / codeForEmail — ro'yxatdagi manzil uchun DEV_OTP_CODE, aks holda kriptografik tasodifiy kod.
+func (s *Service) codeForPhone(phone string) (string, error) {
+	if d := s.opt.Dev; d.Enabled() {
+		if _, ok := d.Phones[phone]; ok {
+			return d.Code, nil
+		}
+	}
+	return cache.NewCode(otpDigits)
+}
+
+func (s *Service) codeForEmail(email string) (string, error) {
+	if d := s.opt.Dev; d.Enabled() {
+		if _, ok := d.Emails[NormalizeEmail(email)]; ok {
+			return d.Code, nil
+		}
+	}
+	return cache.NewCode(otpDigits)
 }
 
 type Service struct {
@@ -42,7 +77,7 @@ func NewService(opt Options, repo Repo, otp *cache.OTP, bl *cache.Blacklist, tok
 
 func (s *Service) OnEvent(f func()) { s.onEvent = f }
 
-type OTPResult struct{ ExpiresIn, ResendAfter int }
+type OTPResult struct{ ExpiresIn, ResendAfter, CodeLength int }
 
 type TokenPair struct {
 	AccessToken  string
@@ -69,7 +104,7 @@ func (s *Service) RequestOTP(ctx context.Context, phone, ip string) (OTPResult, 
 		return OTPResult{}, err
 	}
 
-	code, err := cache.NewCode(otpDigits)
+	code, err := s.codeForPhone(phone)
 	if err != nil {
 		return OTPResult{}, err
 	}
@@ -82,7 +117,7 @@ func (s *Service) RequestOTP(ctx context.Context, phone, ip string) (OTPResult, 
 	if err := s.otp.StartCooldown(ctx, coolKey, s.opt.OTPResend); err != nil {
 		return OTPResult{}, err
 	}
-	return OTPResult{ExpiresIn: int(s.opt.OTPTTL.Seconds()), ResendAfter: int(s.opt.OTPResend.Seconds())}, nil
+	return OTPResult{ExpiresIn: int(s.opt.OTPTTL.Seconds()), ResendAfter: int(s.opt.OTPResend.Seconds()), CodeLength: otpDigits}, nil
 }
 
 func (s *Service) consume(ctx context.Context, key string, limit int) error {

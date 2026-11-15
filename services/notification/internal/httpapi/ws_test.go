@@ -67,8 +67,8 @@ func TestWebSocketTokenChecks(t *testing.T) {
 	u := uuid.New()
 	sid := uuid.NewString()
 	e.mr.Set("bl:sid:"+sid, "1")
+	// Tokensiz so'rov endi 401 emas: birinchi xabar rejimiga o'tadi (ws_auth_test.go).
 	cases := map[string]string{
-		"tokensiz":               "",
 		"axlat":                  "abc.def.ghi",
 		"muddati o'tgan":         e.token("passenger", u, "", -time.Minute, ""),
 		"admin audience":         e.token("passenger", u, "admin", time.Hour, ""),

@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/v1/auth/login/email", s.handle(s.adminLoginEmail))
 	mux.HandleFunc("POST /admin/v1/auth/login/sms", s.handle(s.adminLoginSMS))
 	mux.HandleFunc("POST /admin/v1/auth/login/verify", s.handle(s.adminLoginVerify))
+	mux.HandleFunc("POST /admin/v1/auth/logout", s.handle(s.adminLogout))
 
 	// Ichki API: Kong bu yo'lni tashqariga chiqarmaydi; qo'shimcha ravishda X-Internal-Token talab qilinadi.
 	mux.HandleFunc("POST /internal/identity/staff", s.internal(s.internalStaffCreate))
@@ -133,7 +134,7 @@ func (s *Server) otpRequest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusAccepted, otpRequestResp{ExpiresIn: res.ExpiresIn, ResendAfter: res.ResendAfter})
+	writeJSON(w, http.StatusAccepted, otpRequestResp{ExpiresIn: res.ExpiresIn, ResendAfter: res.ResendAfter, CodeLength: res.CodeLength})
 	return nil
 }
 
@@ -188,7 +189,7 @@ func (s *Server) adminLoginEmail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusAccepted, challengeResp{ChallengeID: ch.ID, ExpiresIn: ch.ExpiresIn})
+	writeJSON(w, http.StatusAccepted, newChallengeResp(ch))
 	return nil
 }
 
@@ -211,7 +212,7 @@ func (s *Server) adminLoginSMS(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusAccepted, challengeResp{ChallengeID: ch.ID, ExpiresIn: ch.ExpiresIn})
+	writeJSON(w, http.StatusAccepted, newChallengeResp(ch))
 	return nil
 }
 
@@ -226,6 +227,22 @@ func (s *Server) adminLoginVerify(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	writeJSON(w, http.StatusOK, adminTokenResp{AccessToken: t.AccessToken, ExpiresIn: t.ExpiresIn, TokenType: "Bearer"})
+	return nil
+}
+
+// adminLogout — POST /admin/v1/auth/logout: Bearer admin token, tana yo'q (bo'lsa e'tiborsiz). 204, tanasiz.
+// authed() ishlatilmaydi: u faqat client/driver tokenini qabul qiladi va bekor qilingan sessiyani rad etadi
+// (bu esa takroriy chaqiruvni idempotent bo'lishiga xalaqit beradi).
+func (s *Server) adminLogout(w http.ResponseWriter, r *http.Request) error {
+	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if raw = strings.TrimSpace(raw); !ok || raw == "" {
+		return apperr.Unauthorized()
+	}
+	if err := s.svc.AdminLogout(r.Context(), raw); err != nil {
+		return err
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 

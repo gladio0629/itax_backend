@@ -103,7 +103,8 @@ func run(log *slog.Logger) error {
 	}
 
 	api := httpapi.New(st, rdb, authn.NewVerifier(pub, cfg.JWTIssuer, rdb), smsSender,
-		httpapi.Options{InternalTokens: cfg.InternalTokens, WSMaxConns: cfg.WSMaxConns, WSRevokeCheck: cfg.WSRevokeCheck, WSPingInterval: cfg.WSPingInterval}, log)
+		httpapi.Options{InternalTokens: cfg.InternalTokens, WSMaxConns: cfg.WSMaxConns, WSRevokeCheck: cfg.WSRevokeCheck, WSPingInterval: cfg.WSPingInterval,
+			WSAuthTimeout: cfg.WSAuthTimeout, WSAllowQueryToken: cfg.WSAllowQueryToken, WSAllowedOrigins: cfg.WSAllowedOrigins}, log)
 	// WriteTimeout qo'yilmaydi: WebSocket uzoq yashaydi (har bir yozuvga alohida timeout bor).
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
