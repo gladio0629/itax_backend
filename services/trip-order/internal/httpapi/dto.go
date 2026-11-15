@@ -123,18 +123,52 @@ func checkComment(f map[string]string, c *string) {
 type createOrderDTO struct {
 	Type          string    `json:"type"`
 	Seats         *int      `json:"seats"`
+	SeatIDs       *[]string `json:"seat_ids"`
 	CarClass      *string   `json:"car_class"`
 	VehicleType   *string   `json:"vehicle_type"`
 	From          *pointDTO `json:"from"`
 	To            *pointDTO `json:"to"`
 	ScheduledAt   *string   `json:"scheduled_at"`
+	ScheduledFrom *string   `json:"scheduled_from"`
+	ScheduledTo   *string   `json:"scheduled_to"`
 	PaymentMethod string    `json:"payment_method"`
 	Comment       *string   `json:"comment"`
+	QuoteID       *string   `json:"quote_id"`
 
-	scheduled *time.Time
+	scheduled, schedFrom, schedTo *time.Time
+	seatIDs                       []domain.SeatID
+	quoteID                       *uuid.UUID
 }
 
-func (d *createOrderDTO) validate() map[string]string {
+// checkSeatIDs — seat_ids: 1..4 ta, takrorlanmas, ma'lum joylar.
+func checkSeatIDs(f map[string]string, raw *[]string) []domain.SeatID {
+	if raw == nil {
+		return nil
+	}
+	if len(*raw) < 1 || len(*raw) > 4 {
+		f["seat_ids"] = "out_of_range"
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]domain.SeatID, 0, len(*raw))
+	for _, v := range *raw {
+		switch {
+		case !domain.SeatID(v).Valid():
+			f["seat_ids"] = "invalid_value"
+			return nil
+		case seen[v]:
+			f["seat_ids"] = "duplicate"
+			return nil
+		}
+		seen[v] = true
+		out = append(out, domain.SeatID(v))
+	}
+	return out
+}
+
+func (d *createOrderDTO) validate() map[string]string { return d.check(false) }
+
+func (d *createOrderDTO) check(quote bool) map[string]string {
 	f := map[string]string{}
 	switch domain.OrderType(d.Type) {
 	case domain.TypePassenger:
@@ -142,14 +176,17 @@ func (d *createOrderDTO) validate() map[string]string {
 			f["vehicle_type"] = "only_for_delivery"
 		}
 		switch {
-		case d.Seats == nil && d.CarClass == nil:
+		case d.Seats == nil && d.SeatIDs == nil && d.CarClass == nil:
 			f["seats"] = "seats_or_car_class_required"
-		case d.Seats != nil && d.CarClass != nil:
+		case (d.Seats != nil || d.SeatIDs != nil) && d.CarClass != nil:
 			f["car_class"] = "conflicts_with_seats"
 		}
 	case domain.TypeDelivery:
 		if d.Seats != nil {
 			f["seats"] = "not_applicable_to_delivery"
+		}
+		if d.SeatIDs != nil {
+			f["seat_ids"] = "not_applicable_to_delivery"
 		}
 		if d.CarClass != nil {
 			f["car_class"] = "not_applicable_to_delivery"
@@ -165,6 +202,10 @@ func (d *createOrderDTO) validate() map[string]string {
 	if d.Seats != nil && (*d.Seats < 1 || *d.Seats > 4) {
 		f["seats"] = "out_of_range"
 	}
+	d.seatIDs = checkSeatIDs(f, d.SeatIDs)
+	if d.seatIDs != nil && d.Seats != nil && *d.Seats != len(d.seatIDs) {
+		f["seats"] = "mismatch_seat_ids"
+	}
 	if d.CarClass != nil && !domain.CarClass(*d.CarClass).Valid() {
 		f["car_class"] = "invalid_value"
 	}
@@ -174,20 +215,39 @@ func (d *createOrderDTO) validate() map[string]string {
 	d.From.check(f, "from")
 	d.To.check(f, "to")
 	switch {
-	case d.PaymentMethod == "":
+	case d.PaymentMethod == "" && !quote:
 		f["payment_method"] = "required"
-	case !domain.PaymentMethod(d.PaymentMethod).Valid():
+	case d.PaymentMethod != "" && !domain.PaymentMethod(d.PaymentMethod).Valid():
 		f["payment_method"] = "invalid_value"
 	}
 	d.scheduled = parseTime(f, "scheduled_at", d.ScheduledAt)
+	d.schedFrom = parseTime(f, "scheduled_from", d.ScheduledFrom)
+	d.schedTo = parseTime(f, "scheduled_to", d.ScheduledTo)
+	if d.ScheduledAt != nil && (d.ScheduledFrom != nil || d.ScheduledTo != nil) {
+		f["scheduled_at"] = "conflicts_with_range"
+	}
 	checkComment(f, d.Comment)
+	if d.QuoteID != nil {
+		if quote {
+			f["quote_id"] = "unknown_field"
+		} else if id, err := uuid.Parse(*d.QuoteID); err != nil {
+			f["quote_id"] = "invalid_format"
+		} else {
+			d.quoteID = &id
+		}
+	}
 	return f
 }
 
 func (d *createOrderDTO) input() service.CreateInput {
 	in := service.CreateInput{
-		Type: domain.OrderType(d.Type), Seats: d.Seats, From: d.From.domain(), To: d.To.domain(),
-		ScheduledAt: d.scheduled, PaymentMethod: domain.PaymentMethod(d.PaymentMethod), Comment: d.Comment,
+		Type: domain.OrderType(d.Type), Seats: d.Seats, SeatIDs: d.seatIDs, From: d.From.domain(), To: d.To.domain(),
+		ScheduledAt: d.scheduled, ScheduledFrom: d.schedFrom, ScheduledTo: d.schedTo,
+		PaymentMethod: domain.PaymentMethod(d.PaymentMethod), Comment: d.Comment, QuoteID: d.quoteID,
+	}
+	if d.seatIDs != nil {
+		n := len(d.seatIDs)
+		in.Seats = &n
 	}
 	if d.CarClass != nil {
 		c := domain.CarClass(*d.CarClass)
@@ -200,28 +260,42 @@ func (d *createOrderDTO) input() service.CreateInput {
 	return in
 }
 
+// quoteDTO — POST /orders/quote: buyurtma bilan bir xil maydonlar; payment_method ixtiyoriy, quote_id yo'q.
+type quoteDTO struct{ createOrderDTO }
+
+func (d *quoteDTO) validate() map[string]string { return d.check(true) }
+
 // ---- buyurtmani o'zgartirish
 
 type updateOrderDTO struct {
 	Seats         *int      `json:"seats"`
+	SeatIDs       *[]string `json:"seat_ids"`
 	CarClass      *string   `json:"car_class"`
 	VehicleType   *string   `json:"vehicle_type"`
 	To            *pointDTO `json:"to"`
 	ScheduledAt   *string   `json:"scheduled_at"`
+	ScheduledFrom *string   `json:"scheduled_from"`
+	ScheduledTo   *string   `json:"scheduled_to"`
 	PaymentMethod *string   `json:"payment_method"`
 	Comment       *string   `json:"comment"`
 
-	scheduled *time.Time
+	scheduled, schedFrom, schedTo *time.Time
+	seatIDs                       []domain.SeatID
 }
 
 func (d *updateOrderDTO) validate() map[string]string {
 	f := map[string]string{}
-	if d.Seats == nil && d.CarClass == nil && d.VehicleType == nil && d.To == nil && d.ScheduledAt == nil && d.PaymentMethod == nil && d.Comment == nil {
+	if d.Seats == nil && d.SeatIDs == nil && d.CarClass == nil && d.VehicleType == nil && d.To == nil && d.ScheduledAt == nil &&
+		d.ScheduledFrom == nil && d.ScheduledTo == nil && d.PaymentMethod == nil && d.Comment == nil {
 		f["body"] = "at_least_one_field"
 		return f
 	}
 	if d.Seats != nil && (*d.Seats < 1 || *d.Seats > 4) {
 		f["seats"] = "out_of_range"
+	}
+	d.seatIDs = checkSeatIDs(f, d.SeatIDs)
+	if d.seatIDs != nil && d.Seats != nil && *d.Seats != len(d.seatIDs) {
+		f["seats"] = "mismatch_seat_ids"
 	}
 	if d.CarClass != nil && !domain.CarClass(*d.CarClass).Valid() {
 		f["car_class"] = "invalid_value"
@@ -236,12 +310,18 @@ func (d *updateOrderDTO) validate() map[string]string {
 		f["payment_method"] = "invalid_value"
 	}
 	d.scheduled = parseTime(f, "scheduled_at", d.ScheduledAt)
+	d.schedFrom = parseTime(f, "scheduled_from", d.ScheduledFrom)
+	d.schedTo = parseTime(f, "scheduled_to", d.ScheduledTo)
+	if d.ScheduledAt != nil && (d.ScheduledFrom != nil || d.ScheduledTo != nil) {
+		f["scheduled_at"] = "conflicts_with_range"
+	}
 	checkComment(f, d.Comment)
 	return f
 }
 
 func (d *updateOrderDTO) input() service.UpdateInput {
-	in := service.UpdateInput{Seats: d.Seats, ScheduledAt: d.scheduled, Comment: d.Comment}
+	in := service.UpdateInput{Seats: d.Seats, SeatIDs: d.seatIDs, ScheduledAt: d.scheduled, ScheduledFrom: d.schedFrom,
+		ScheduledTo: d.schedTo, Comment: d.Comment}
 	if d.CarClass != nil {
 		c := domain.CarClass(*d.CarClass)
 		in.CarClass = &c
@@ -327,23 +407,34 @@ type driverResp struct {
 }
 
 type orderResp struct {
-	ID            uuid.UUID   `json:"id"`
-	Type          string      `json:"type"`
-	Seats         *int        `json:"seats,omitempty"`
-	CarClass      *string     `json:"car_class,omitempty"`
-	VehicleType   *string     `json:"vehicle_type,omitempty"`
-	From          pointResp   `json:"from"`
-	To            pointResp   `json:"to"`
-	ScheduledAt   *time.Time  `json:"scheduled_at"`
-	PaymentMethod string      `json:"payment_method"`
-	Comment       *string     `json:"comment"`
-	Status        string      `json:"status"`
-	Price         int64       `json:"price"`
-	DistanceM     int         `json:"distance_m"`
-	DurationS     int         `json:"duration_s"`
-	Driver        *driverResp `json:"driver"`
-	TripID        *uuid.UUID  `json:"trip_id"`
-	CreatedAt     time.Time   `json:"created_at"`
+	ID            uuid.UUID          `json:"id"`
+	Type          string             `json:"type"`
+	Seats         *int               `json:"seats,omitempty"`
+	SeatIDs       []string           `json:"seat_ids,omitempty"`
+	CarClass      *string            `json:"car_class,omitempty"`
+	VehicleType   *string            `json:"vehicle_type,omitempty"`
+	From          pointResp          `json:"from"`
+	To            pointResp          `json:"to"`
+	FromCityID    *uuid.UUID         `json:"from_city_id"`
+	ToCityID      *uuid.UUID         `json:"to_city_id"`
+	ScheduledAt   *time.Time         `json:"scheduled_at"`
+	ScheduledFrom *time.Time         `json:"scheduled_from"`
+	ScheduledTo   *time.Time         `json:"scheduled_to"`
+	PaymentMethod string             `json:"payment_method"`
+	Comment       *string            `json:"comment"`
+	Status        string             `json:"status"`
+	Price         int64              `json:"price"`
+	PriceLines    []domain.PriceLine `json:"price_lines"`
+	QuoteID       *uuid.UUID         `json:"quote_id"`
+	DistanceM     int                `json:"distance_m"`
+	DurationS     int                `json:"duration_s"`
+	Driver        *driverResp        `json:"driver"`
+	TripID        *uuid.UUID         `json:"trip_id"`
+	CancelReason  *string            `json:"cancel_reason"`
+	// Server qarorlari: klient holatdan o'zi xulosa chiqarmaydi.
+	Editable  bool      `json:"editable"`
+	CanCancel bool      `json:"can_cancel"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func strp[T ~string](v *T) *string {
@@ -354,15 +445,33 @@ func strp[T ~string](v *T) *string {
 	return &s
 }
 
+func seatStrings(ids []domain.SeatID) []string {
+	if ids == nil {
+		return nil
+	}
+	out := make([]string, len(ids))
+	for i, v := range ids {
+		out[i] = string(v)
+	}
+	return out
+}
+
+// orderLines — saqlangan tarkib (yig'indisi narxga teng bo'lsa), aks holda bitta qator.
+func orderLines(o domain.Order) []domain.PriceLine {
+	if len(o.Lines) > 0 && domain.SumLines(o.Lines) == o.Price {
+		return o.Lines
+	}
+	return domain.DefaultLines(o.Type, o.Seats, o.Price)
+}
+
 func newOrderResp(o domain.Order) orderResp {
 	r := orderResp{
-		ID: o.ID, Type: string(o.Type), Seats: o.Seats, CarClass: strp(o.CarClass), VehicleType: strp(o.VehicleType),
-		From: newPointResp(o.From), To: newPointResp(o.To), PaymentMethod: string(o.PaymentMethod), Comment: o.Comment,
-		Status: string(o.Status), Price: o.Price, DistanceM: o.DistanceM, DurationS: o.DurationS, TripID: o.TripID, CreatedAt: o.CreatedAt,
-	}
-	if o.ScheduledAt != nil {
-		t := o.ScheduledAt.UTC()
-		r.ScheduledAt = &t
+		ID: o.ID, Type: string(o.Type), Seats: o.Seats, SeatIDs: seatStrings(o.SeatIDs), CarClass: strp(o.CarClass), VehicleType: strp(o.VehicleType),
+		From: newPointResp(o.From), To: newPointResp(o.To), FromCityID: o.FromCityID, ToCityID: o.ToCityID,
+		ScheduledAt: utc(o.ScheduledAt), ScheduledFrom: utc(o.ScheduledFrom), ScheduledTo: utc(o.ScheduledTo),
+		PaymentMethod: string(o.PaymentMethod), Comment: o.Comment, Status: string(o.Status), Price: o.Price, PriceLines: orderLines(o),
+		QuoteID: o.QuoteID, DistanceM: o.DistanceM, DurationS: o.DurationS, TripID: o.TripID, CancelReason: o.CancelReason,
+		Editable: o.Status == domain.Searching, CanCancel: o.Status == domain.Searching, CreatedAt: o.CreatedAt,
 	}
 	if o.DriverID != nil {
 		r.Driver = &driverResp{ID: *o.DriverID}
@@ -376,27 +485,38 @@ type page[T any] struct {
 }
 
 type offerResp struct {
-	ID          uuid.UUID `json:"id"`
-	OrderID     uuid.UUID `json:"order_id"`
-	Type        string    `json:"type"`
-	Seats       *int      `json:"seats,omitempty"`
-	CarClass    *string   `json:"car_class,omitempty"`
-	VehicleType *string   `json:"vehicle_type,omitempty"`
-	From        pointResp `json:"from"`
-	To          pointResp `json:"to"`
-	Price       int64     `json:"price"`
-	Commission  int64     `json:"commission"`
-	DistanceM   int       `json:"distance_m"`
-	PickupETAs  int       `json:"pickup_eta_s"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	ID            uuid.UUID  `json:"id"`
+	OrderID       uuid.UUID  `json:"order_id"`
+	Type          string     `json:"type"`
+	Seats         *int       `json:"seats,omitempty"`
+	SeatIDs       []string   `json:"seat_ids,omitempty"`
+	CarClass      *string    `json:"car_class,omitempty"`
+	VehicleType   *string    `json:"vehicle_type,omitempty"`
+	From          pointResp  `json:"from"`
+	To            pointResp  `json:"to"`
+	FromCityID    *uuid.UUID `json:"from_city_id"`
+	ToCityID      *uuid.UUID `json:"to_city_id"`
+	ScheduledAt   *time.Time `json:"scheduled_at"`
+	ScheduledFrom *time.Time `json:"scheduled_from"`
+	ScheduledTo   *time.Time `json:"scheduled_to"`
+	PaymentMethod string     `json:"payment_method"`
+	Comment       *string    `json:"comment"`
+	Price         int64      `json:"price"`
+	Commission    int64      `json:"commission"`
+	DistanceM     int        `json:"distance_m"`
+	PickupETAs    int        `json:"pickup_eta_s"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
 }
 
 func newOfferResp(v domain.OfferView) offerResp {
 	o := v.Order
 	return offerResp{
-		ID: v.Offer.ID, OrderID: o.ID, Type: string(o.Type), Seats: o.Seats, CarClass: strp(o.CarClass), VehicleType: strp(o.VehicleType),
-		From: newPointResp(o.From), To: newPointResp(o.To), Price: o.Price, Commission: o.Commission, DistanceM: o.DistanceM,
-		PickupETAs: v.Offer.PickupETAs, ExpiresAt: v.Offer.ExpiresAt,
+		ID: v.Offer.ID, OrderID: o.ID, Type: string(o.Type), Seats: o.Seats, SeatIDs: seatStrings(o.SeatIDs), CarClass: strp(o.CarClass),
+		VehicleType: strp(o.VehicleType), From: newPointResp(o.From), To: newPointResp(o.To), FromCityID: o.FromCityID, ToCityID: o.ToCityID,
+		ScheduledAt: utc(o.ScheduledAt), ScheduledFrom: utc(o.ScheduledFrom), ScheduledTo: utc(o.ScheduledTo),
+		PaymentMethod: string(o.PaymentMethod), Comment: o.Comment, Price: o.Price, Commission: o.Commission, DistanceM: o.DistanceM,
+		PickupETAs: v.Offer.PickupETAs, CreatedAt: v.Offer.CreatedAt, ExpiresAt: v.Offer.ExpiresAt,
 	}
 }
 

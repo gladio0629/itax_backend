@@ -96,6 +96,31 @@ func TestCalculatePassenger(t *testing.T) {
 		if r.Status != 200 || r.Body["price"] != want {
 			t.Errorf("%s: %d %s (kutilgan %v)", class, r.Status, r.Raw, want)
 		}
+		checkLines(t, r.Body)
+	}
+	for _, v := range []string{"spark", "fura"} {
+		checkLines(t, calc(t, e, req(map[string]any{"seats": nil, "type": "delivery", "vehicle_type": v})).Body)
+	}
+	checkLines(t, calc(t, e, req(map[string]any{"seats": 3})).Body)
+}
+
+// checkLines — javobdagi lines yig'indisi price ga teng, har qatorda key bor.
+func checkLines(t *testing.T, body map[string]any) {
+	t.Helper()
+	ls, _ := body["lines"].([]any)
+	if len(ls) == 0 {
+		t.Fatalf("lines yo'q: %v", body)
+	}
+	var sum float64
+	for _, it := range ls {
+		l := it.(map[string]any)
+		if k, _ := l["key"].(string); k == "" {
+			t.Fatalf("key yo'q: %v", l)
+		}
+		sum += l["amount"].(float64)
+	}
+	if sum != body["price"] {
+		t.Fatalf("lines yig'indisi %v != price %v", sum, body["price"])
 	}
 }
 

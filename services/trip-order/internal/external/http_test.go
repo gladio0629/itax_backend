@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -67,6 +68,31 @@ type pricingWire struct {
 	To          *pointJSON `json:"to"`
 }
 
+// Narx tarkibi faqat yig'indisi narxga teng bo'lsa qabul qilinadi.
+func TestHTTPPricerLines(t *testing.T) {
+	from, to := p(41.3111, 69.2797), p(41.2995, 69.2401)
+	run := func(lines []map[string]any) Quote {
+		t.Helper()
+		srv := fakeServer(t, "/internal/pricing/calculate", 200,
+			map[string]any{"price": 1_000_000, "commission": 100_000, "distance_m": 5400, "duration_s": 675, "lines": lines}, &pricingWire{})
+		q, err := NewHTTPPricer(srv.URL, testToken, hc()).Quote(context.Background(), QuoteRequest{Type: domain.TypePassenger, Seats: ip(1), From: from, To: to})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	ok := run([]map[string]any{{"key": "quote.carFare", "amount": 800_000}, {"key": "quote.class.komfort", "params": map[string]any{"pct": 25}, "amount": 200_000}})
+	if len(ok.Lines) != 2 || ok.Lines[1].Key != "quote.class.komfort" || ok.Lines[1].Amount != 200_000 {
+		t.Fatalf("lines = %+v", ok.Lines)
+	}
+	if bad := run([]map[string]any{{"key": "quote.carFare", "amount": 999_999}}); bad.Lines != nil {
+		t.Fatalf("yig'indisi mos kelmagan lines qabul qilindi: %+v", bad.Lines)
+	}
+	if neg := run([]map[string]any{{"key": "a", "amount": 1_100_000}, {"key": "b", "amount": -100_000}}); neg.Lines != nil {
+		t.Fatalf("manfiy qator qabul qilindi: %+v", neg.Lines)
+	}
+}
+
 func TestHTTPPricerQuote(t *testing.T) {
 	var got pricingWire
 	srv := fakeServer(t, "/internal/pricing/calculate", 200,
@@ -79,7 +105,7 @@ func TestHTTPPricerQuote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q != (Quote{Price: 1_250_000, Commission: 125_000, DistanceM: 5400, DurationS: 675}) {
+	if !reflect.DeepEqual(q, Quote{Price: 1_250_000, Commission: 125_000, DistanceM: 5400, DurationS: 675}) {
 		t.Errorf("quote = %+v", q)
 	}
 	if got.Type != "passenger" || got.Seats == nil || *got.Seats != 2 || got.CarClass != nil || got.VehicleType != nil ||

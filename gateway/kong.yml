@@ -32,6 +32,19 @@ services:
       - name: trips
         paths: ["/api/v1/trips"]
         strip_path: false
+      # ma'lumotnomalar va manzil qidiruvi (Trip & Order ichida; geocoder kaliti faqat serverda)
+      - name: cities
+        paths: ["/api/v1/cities"]
+        strip_path: false
+      - name: places
+        paths: ["/api/v1/places"]
+        strip_path: false
+      - name: popular-routes
+        paths: ["/api/v1/routes"]
+        strip_path: false
+      - name: delivery
+        paths: ["/api/v1/delivery"]
+        strip_path: false
 
   - name: notification
     url: http://notification:8016

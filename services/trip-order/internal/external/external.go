@@ -26,6 +26,8 @@ type Quote struct {
 	Commission int64 // tiyin
 	DistanceM  int
 	DurationS  int
+	// Lines — narx tarkibi (yig'indisi = Price). Bo'sh bo'lsa chaqiruvchi domain.DefaultLines ishlatadi.
+	Lines []domain.PriceLine
 }
 
 type FinalizeRequest struct {

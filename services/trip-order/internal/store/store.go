@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -54,7 +55,8 @@ func trunc(t time.Time) time.Time { return t.UTC().Truncate(time.Microsecond) }
 const orderColList = `id, passenger_id, type, seats, car_class, vehicle_type,
 	from_lat, from_lng, from_address, to_lat, to_lng, to_address, scheduled_at, payment_method, comment,
 	status, price, commission, distance_m, duration_s, driver_id, trip_id, idempotency_key,
-	search_expires_at, version, created_at, updated_at`
+	search_expires_at, version, created_at, updated_at,
+	seat_ids, scheduled_from, scheduled_to, quote_id, price_lines, from_city_id, to_city_id, cancel_reason`
 
 // orderCols — alias bilan (JOIN uchun): o.id, o.passenger_id ...
 func orderCols(alias string) string {
@@ -87,45 +89,101 @@ func splitCols(s string) []string {
 	return append(out, cur)
 }
 
+// orderScan — orderColList tartibidagi ustunlarni domain.Order ga o'qish (scanOrder va scanOfferView uchun umumiy).
+type orderScan struct {
+	typ, pay, status      string
+	seats                 *int16
+	carClass, vehicleType *string
+	fromAddr, toAddr      *string
+	seatIDs               []string
+	lines                 []byte
+}
+
+func (sc *orderScan) dest(o *domain.Order) []any {
+	return []any{&o.ID, &o.PassengerID, &sc.typ, &sc.seats, &sc.carClass, &sc.vehicleType,
+		&o.From.Lat, &o.From.Lng, &sc.fromAddr, &o.To.Lat, &o.To.Lng, &sc.toAddr, &o.ScheduledAt, &sc.pay, &o.Comment,
+		&sc.status, &o.Price, &o.Commission, &o.DistanceM, &o.DurationS, &o.DriverID, &o.TripID, &o.IdempotencyKey,
+		&o.SearchExpiresAt, &o.Version, &o.CreatedAt, &o.UpdatedAt,
+		&sc.seatIDs, &o.ScheduledFrom, &o.ScheduledTo, &o.QuoteID, &sc.lines, &o.FromCityID, &o.ToCityID, &o.CancelReason}
+}
+
+func (sc *orderScan) finish(o *domain.Order) error {
+	o.Type, o.PaymentMethod, o.Status = domain.OrderType(sc.typ), domain.PaymentMethod(sc.pay), domain.OrderStatus(sc.status)
+	if sc.seats != nil {
+		v := int(*sc.seats)
+		o.Seats = &v
+	}
+	if sc.carClass != nil {
+		v := domain.CarClass(*sc.carClass)
+		o.CarClass = &v
+	}
+	if sc.vehicleType != nil {
+		v := domain.VehicleType(*sc.vehicleType)
+		o.VehicleType = &v
+	}
+	if sc.fromAddr != nil {
+		o.From.Address = *sc.fromAddr
+	}
+	if sc.toAddr != nil {
+		o.To.Address = *sc.toAddr
+	}
+	if sc.seatIDs != nil {
+		o.SeatIDs = make([]domain.SeatID, len(sc.seatIDs))
+		for i, v := range sc.seatIDs {
+			o.SeatIDs[i] = domain.SeatID(v)
+		}
+	}
+	if len(sc.lines) > 0 {
+		if err := json.Unmarshal(sc.lines, &o.Lines); err != nil {
+			return fmt.Errorf("price_lines: %w", err)
+		}
+	}
+	o.CreatedAt, o.UpdatedAt, o.SearchExpiresAt = o.CreatedAt.UTC(), o.UpdatedAt.UTC(), o.SearchExpiresAt.UTC()
+	o.ScheduledAt, o.ScheduledFrom, o.ScheduledTo = utcp(o.ScheduledAt), utcp(o.ScheduledFrom), utcp(o.ScheduledTo)
+	return nil
+}
+
+func utcp(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
+}
+
 func scanOrder(row pgx.Row) (domain.Order, error) {
-	var (
-		o                     domain.Order
-		typ, pay, status      string
-		seats                 *int16
-		carClass, vehicleType *string
-		fromAddr, toAddr      *string
-	)
-	err := row.Scan(&o.ID, &o.PassengerID, &typ, &seats, &carClass, &vehicleType,
-		&o.From.Lat, &o.From.Lng, &fromAddr, &o.To.Lat, &o.To.Lng, &toAddr, &o.ScheduledAt, &pay, &o.Comment,
-		&status, &o.Price, &o.Commission, &o.DistanceM, &o.DurationS, &o.DriverID, &o.TripID, &o.IdempotencyKey,
-		&o.SearchExpiresAt, &o.Version, &o.CreatedAt, &o.UpdatedAt)
-	if err != nil {
+	var o domain.Order
+	var sc orderScan
+	if err := row.Scan(sc.dest(&o)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Order{}, domain.ErrNotFound
 		}
 		return domain.Order{}, err
 	}
-	o.Type, o.PaymentMethod, o.Status = domain.OrderType(typ), domain.PaymentMethod(pay), domain.OrderStatus(status)
-	if seats != nil {
-		v := int(*seats)
-		o.Seats = &v
+	if err := sc.finish(&o); err != nil {
+		return domain.Order{}, err
 	}
-	if carClass != nil {
-		v := domain.CarClass(*carClass)
-		o.CarClass = &v
-	}
-	if vehicleType != nil {
-		v := domain.VehicleType(*vehicleType)
-		o.VehicleType = &v
-	}
-	if fromAddr != nil {
-		o.From.Address = *fromAddr
-	}
-	if toAddr != nil {
-		o.To.Address = *toAddr
-	}
-	o.CreatedAt, o.UpdatedAt, o.SearchExpiresAt = o.CreatedAt.UTC(), o.UpdatedAt.UTC(), o.SearchExpiresAt.UTC()
 	return o, nil
+}
+
+// seatArg — text[] ustuni uchun (nil -> NULL).
+func seatArg(ids []domain.SeatID) []string {
+	if ids == nil {
+		return nil
+	}
+	out := make([]string, len(ids))
+	for i, v := range ids {
+		out[i] = string(v)
+	}
+	return out
+}
+
+// linesArg — jsonb ustuni uchun (bo'sh -> NULL).
+func linesArg(ls []domain.PriceLine) ([]byte, error) {
+	if len(ls) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(ls)
 }
 
 func nilIfEmpty(s string) *string {
@@ -192,18 +250,24 @@ func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain
 		if active >= activeLimit {
 			return domain.ErrLimitReached
 		}
+		lines, err := linesArg(o.Lines)
+		if err != nil {
+			return err
+		}
 		var inserted uuid.UUID
-		err := tx.QueryRow(ctx, `
+		err = tx.QueryRow(ctx, `
 			INSERT INTO orders (id, passenger_id, type, seats, car_class, vehicle_type,
 				from_lat, from_lng, from_address, to_lat, to_lng, to_address, scheduled_at, payment_method, comment,
-				status, price, commission, distance_m, duration_s, idempotency_key, search_expires_at, version, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,1,$23,$23)
+				status, price, commission, distance_m, duration_s, idempotency_key, search_expires_at, version, created_at, updated_at,
+				seat_ids, scheduled_from, scheduled_to, quote_id, price_lines, from_city_id, to_city_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,1,$23,$23,$24,$25,$26,$27,$28,$29,$30)
 			ON CONFLICT (passenger_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 			RETURNING id`,
 			o.ID, o.PassengerID, string(o.Type), o.Seats, o.CarClass, o.VehicleType,
 			o.From.Lat, o.From.Lng, nilIfEmpty(o.From.Address), o.To.Lat, o.To.Lng, nilIfEmpty(o.To.Address),
 			o.ScheduledAt, string(o.PaymentMethod), o.Comment, string(o.Status), o.Price, o.Commission, o.DistanceM, o.DurationS,
-			o.IdempotencyKey, trunc(o.SearchExpiresAt), trunc(o.CreatedAt)).Scan(&inserted)
+			o.IdempotencyKey, trunc(o.SearchExpiresAt), trunc(o.CreatedAt),
+			seatArg(o.SeatIDs), o.ScheduledFrom, o.ScheduledTo, o.QuoteID, lines, o.FromCityID, o.ToCityID).Scan(&inserted)
 		if errors.Is(err, pgx.ErrNoRows) {
 			replay = true
 			out, err = scanOrder(tx.QueryRow(ctx, `SELECT `+orderColList+` FROM orders WHERE passenger_id = $1 AND idempotency_key = $2`,
@@ -212,6 +276,16 @@ func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain
 		}
 		if err != nil {
 			return err
+		}
+		// Narx taklifi bir marta ishlatiladi: boshqa buyurtma olgan bo'lsa tranzaksiya bekor (ErrQuoteUsed).
+		if o.QuoteID != nil {
+			tag, err := tx.Exec(ctx, `UPDATE quotes SET used_order_id=$1 WHERE id=$2 AND used_order_id IS NULL`, o.ID, *o.QuoteID)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return domain.ErrQuoteUsed
+			}
 		}
 		for _, of := range offers {
 			if _, err := tx.Exec(ctx, `INSERT INTO offers (id, order_id, driver_id, pickup_eta_s, status, expires_at, created_at)
@@ -269,15 +343,20 @@ func (s *Store) ListOrders(ctx context.Context, passenger uuid.UUID, cur *Cursor
 // UpdateSearching — parametrlarni optimistik (version) yangilaydi. false: buyurtma endi searching emas yoki versiya o'zgargan.
 func (s *Store) UpdateSearching(ctx context.Context, o domain.Order, expectedVersion int, now time.Time) (bool, error) {
 	updated := false
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	lines, err := linesArg(o.Lines)
+	if err != nil {
+		return false, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE orders SET seats=$4, car_class=$5, vehicle_type=$6, to_lat=$7, to_lng=$8, to_address=$9,
 				scheduled_at=$10, payment_method=$11, comment=$12, price=$13, commission=$14, distance_m=$15, duration_s=$16,
-				search_expires_at=$17, version=version+1, updated_at=$18
+				search_expires_at=$17, version=version+1, updated_at=$18,
+				seat_ids=$19, scheduled_from=$20, scheduled_to=$21, price_lines=$22, to_city_id=$23
 			WHERE id=$1 AND passenger_id=$2 AND status='searching' AND version=$3`,
 			o.ID, o.PassengerID, expectedVersion, o.Seats, o.CarClass, o.VehicleType, o.To.Lat, o.To.Lng, nilIfEmpty(o.To.Address),
 			o.ScheduledAt, string(o.PaymentMethod), o.Comment, o.Price, o.Commission, o.DistanceM, o.DurationS,
-			trunc(o.SearchExpiresAt), trunc(now))
+			trunc(o.SearchExpiresAt), trunc(now), seatArg(o.SeatIDs), o.ScheduledFrom, o.ScheduledTo, lines, o.ToCityID)
 		if err != nil {
 			return err
 		}
@@ -376,19 +455,10 @@ func (s *Store) CountActiveTrips(ctx context.Context, driver uuid.UUID) (int, er
 func scanOfferView(row pgx.Row) (domain.OfferView, error) {
 	var v domain.OfferView
 	var st string
-	// offer ustunlari, so'ng buyurtma ustunlari
-	var (
-		typ, pay, status      string
-		seats                 *int16
-		carClass, vehicleType *string
-		fromAddr, toAddr      *string
-	)
-	err := row.Scan(&v.Offer.ID, &v.Offer.OrderID, &v.Offer.DriverID, &v.Offer.PickupETAs, &st, &v.Offer.ExpiresAt, &v.Offer.CreatedAt,
-		&v.Order.ID, &v.Order.PassengerID, &typ, &seats, &carClass, &vehicleType,
-		&v.Order.From.Lat, &v.Order.From.Lng, &fromAddr, &v.Order.To.Lat, &v.Order.To.Lng, &toAddr, &v.Order.ScheduledAt, &pay, &v.Order.Comment,
-		&status, &v.Order.Price, &v.Order.Commission, &v.Order.DistanceM, &v.Order.DurationS, &v.Order.DriverID, &v.Order.TripID, &v.Order.IdempotencyKey,
-		&v.Order.SearchExpiresAt, &v.Order.Version, &v.Order.CreatedAt, &v.Order.UpdatedAt)
-	if err != nil {
+	var sc orderScan
+	dest := append([]any{&v.Offer.ID, &v.Offer.OrderID, &v.Offer.DriverID, &v.Offer.PickupETAs, &st, &v.Offer.ExpiresAt, &v.Offer.CreatedAt},
+		sc.dest(&v.Order)...)
+	if err := row.Scan(dest...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.OfferView{}, domain.ErrNotFound
 		}
@@ -396,25 +466,8 @@ func scanOfferView(row pgx.Row) (domain.OfferView, error) {
 	}
 	v.Offer.Status = domain.OfferStatus(st)
 	v.Offer.ExpiresAt, v.Offer.CreatedAt = v.Offer.ExpiresAt.UTC(), v.Offer.CreatedAt.UTC()
-	o := &v.Order
-	o.Type, o.PaymentMethod, o.Status = domain.OrderType(typ), domain.PaymentMethod(pay), domain.OrderStatus(status)
-	if seats != nil {
-		n := int(*seats)
-		o.Seats = &n
-	}
-	if carClass != nil {
-		c := domain.CarClass(*carClass)
-		o.CarClass = &c
-	}
-	if vehicleType != nil {
-		t := domain.VehicleType(*vehicleType)
-		o.VehicleType = &t
-	}
-	if fromAddr != nil {
-		o.From.Address = *fromAddr
-	}
-	if toAddr != nil {
-		o.To.Address = *toAddr
+	if err := sc.finish(&v.Order); err != nil {
+		return domain.OfferView{}, err
 	}
 	return v, nil
 }
@@ -614,7 +667,9 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID, driver uuid.UUID, fin 
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `UPDATE orders SET status='completed', price=$2, commission=$3, distance_m=$4, version=version+1, updated_at=$5
+		// narx o'zgargan bo'lsa eski tarkib noto'g'ri: NULL (javobda bitta qator chiqadi)
+		tag, err := tx.Exec(ctx, `UPDATE orders SET status='completed', price_lines = CASE WHEN price=$2 THEN price_lines END,
+				price=$2, commission=$3, distance_m=$4, version=version+1, updated_at=$5
 			WHERE id=$1 AND status='in_progress'`, t.OrderID, fin.Price, fin.Commission, fin.DistanceM, trunc(now))
 		if err != nil {
 			return err

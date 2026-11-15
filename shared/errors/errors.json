@@ -292,6 +292,34 @@
       "params": {
         "reason": "string — timeout | unreachable | http_<status>"
       }
+    },
+    "QUOTE_NOT_FOUND": {
+      "http": 404,
+      "description": "Narx taklifi topilmadi yoki boshqa foydalanuvchiniki.",
+      "params": {
+        "quote_id": "uuid"
+      }
+    },
+    "QUOTE_EXPIRED": {
+      "http": 409,
+      "description": "Narx taklifining muddati o'tgan — yangi orders/quote so'rang.",
+      "params": {
+        "quote_id": "uuid"
+      }
+    },
+    "QUOTE_ALREADY_USED": {
+      "http": 409,
+      "description": "Narx taklifi boshqa buyurtmada ishlatilgan.",
+      "params": {
+        "quote_id": "uuid"
+      }
+    },
+    "QUOTE_MISMATCH": {
+      "http": 409,
+      "description": "Buyurtmaning narxga ta'sir qiladigan maydonlari (tur, o'rindiqlar, sinf, yuk mashinasi, manzillar) taklifdagidan farq qiladi.",
+      "params": {
+        "quote_id": "uuid"
+      }
     }
   }
 }

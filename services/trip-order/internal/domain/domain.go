@@ -136,6 +136,110 @@ type Point struct {
 	Address string
 }
 
+// SeatID — mashinadagi o'rindiq joyi (seat map). Narx o'rindiqlar SONIGA bog'liq; joy faqat tanlov sifatida saqlanadi.
+type SeatID string
+
+const (
+	SeatFront     SeatID = "front"
+	SeatBackLeft  SeatID = "back-left"
+	SeatBackMid   SeatID = "back-mid"
+	SeatBackRight SeatID = "back-right"
+)
+
+// AllSeats — seat map tartibi.
+var AllSeats = []SeatID{SeatFront, SeatBackLeft, SeatBackMid, SeatBackRight}
+
+func (s SeatID) Valid() bool {
+	switch s {
+	case SeatFront, SeatBackLeft, SeatBackMid, SeatBackRight:
+		return true
+	}
+	return false
+}
+
+// PriceLine — narx tarkibining bir qatori (klient i18n kaliti + qiymatlar + summa tiyinda).
+// Buyurtma/taklif qatorlarining yig'indisi doim narxga teng.
+type PriceLine struct {
+	Key    string         `json:"key"`
+	Params map[string]any `json:"params,omitempty"`
+	Amount int64          `json:"amount"`
+}
+
+// SumLines — qatorlar yig'indisi.
+func SumLines(ls []PriceLine) int64 {
+	var s int64
+	for _, l := range ls {
+		s += l.Amount
+	}
+	return s
+}
+
+// DefaultLines — narx tarkibi noma'lum bo'lganda (eski buyurtma, Pricing qatorsiz javob) bitta qator.
+func DefaultLines(t OrderType, seats *int, price int64) []PriceLine {
+	switch {
+	case t == TypeDelivery:
+		return []PriceLine{{Key: "quote.cargoBase", Amount: price}}
+	case seats != nil:
+		return []PriceLine{{Key: "quote.seatFare", Params: map[string]any{"count": *seats}, Amount: price}}
+	default:
+		return []PriceLine{{Key: "quote.carFare", Amount: price}}
+	}
+}
+
+// Quote — narx taklifi. Buyurtma quote_id bilan yaratilsa, aynan shu narx yoziladi (qayta hisoblanmaydi).
+type Quote struct {
+	ID          uuid.UUID
+	PassengerID uuid.UUID
+	InputHash   string
+	Price       int64
+	Commission  int64
+	DistanceM   int
+	DurationS   int
+	Lines       []PriceLine
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+	UsedOrderID *uuid.UUID
+}
+
+// City — shaharlar katalogi yozuvi.
+type City struct {
+	ID     uuid.UUID
+	Slug   string
+	Name   string
+	Region string
+	Lat    float64
+	Lng    float64
+}
+
+// Place — qidiruv natijasi (shahar yoki gazetteer'dagi manzil).
+type Place struct {
+	ID        uuid.UUID
+	CityID    uuid.UUID
+	Name      string
+	Area      string
+	Kind      string // city | landmark | station | bus_station | airport | market | district | address
+	Lat, Lng  float64
+	Entrance  *string
+	DistanceM *int
+}
+
+// SavedPlace — foydalanuvchining saqlangan manzili.
+type SavedPlace struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Area      string
+	Lat, Lng  float64
+	Details   map[string]string // entrance, floor, apartment, intercom, note
+	CreatedAt time.Time
+}
+
+// PopularRoute — mashhur shaharlararo yo'nalish.
+type PopularRoute struct {
+	ID       uuid.UUID
+	From, To City
+}
+
 type Order struct {
 	ID          uuid.UUID
 	PassengerID uuid.UUID
@@ -146,10 +250,22 @@ type Order struct {
 	CarClass    *CarClass
 	VehicleType *VehicleType
 
-	From, To      Point
+	// SeatIDs — tanlangan o'rindiq joylari (bo'lsa, Seats = len(SeatIDs)).
+	SeatIDs []SeatID
+
+	From, To Point
+	// FromCityID/ToCityID — eng yaqin shahar (server aniqlaydi; shaharlardan uzoq bo'lsa nil).
+	FromCityID, ToCityID *uuid.UUID
+	// Vaqt: ScheduledAt (aniq vaqt) YOKI ScheduledFrom..ScheduledTo (oraliq); hammasi nil — hozir ("haydovchi istagan").
 	ScheduledAt   *time.Time
+	ScheduledFrom *time.Time
+	ScheduledTo   *time.Time
 	PaymentMethod PaymentMethod
 	Comment       *string
+
+	QuoteID      *uuid.UUID
+	Lines        []PriceLine
+	CancelReason *string
 
 	Status     OrderStatus
 	Price      int64 // tiyin
@@ -180,11 +296,14 @@ func (o *Order) CheckShape() error {
 		if o.Seats != nil && (*o.Seats < 1 || *o.Seats > 4) {
 			return errors.New("seats 1..4")
 		}
+		if o.SeatIDs != nil && (o.Seats == nil || *o.Seats != len(o.SeatIDs)) {
+			return errors.New("seat_ids soni seats ga teng emas")
+		}
 		if o.CarClass != nil && !o.CarClass.Valid() {
 			return errors.New("car_class noto'g'ri")
 		}
 	case TypeDelivery:
-		if o.Seats != nil || o.CarClass != nil {
+		if o.Seats != nil || o.CarClass != nil || o.SeatIDs != nil {
 			return errors.New("seats/car_class delivery uchun emas")
 		}
 		if o.VehicleType == nil || !o.VehicleType.Valid() {
@@ -271,6 +390,8 @@ var (
 	ErrAlreadyRated = errors.New("domain: already rated")
 	// ErrLimitReached — faol buyurtmalar/safarlar limiti (F-24); bazada tekshiriladi (haqiqat manbai).
 	ErrLimitReached = errors.New("domain: active limit reached")
+	// ErrQuoteUsed — narx taklifi boshqa buyurtmada ishlatilgan.
+	ErrQuoteUsed = errors.New("domain: quote already used")
 )
 
 // StateError — amal hozirgi holatda mumkin emas.

@@ -53,3 +53,21 @@ func WalletLimitReached(limit int64) *Error {
 func Validation(fields map[string]string) *Error {
 	return New(http.StatusUnprocessableEntity, "VALIDATION_ERROR", map[string]any{"fields": fields})
 }
+
+// Narx taklifi (quote) xatolari: buyurtma faqat ko'rsatilgan narx bilan yaratiladi, aks holda aniq rad etiladi.
+func QuoteNotFound(id string) *Error {
+	return New(http.StatusNotFound, "QUOTE_NOT_FOUND", map[string]any{"quote_id": id})
+}
+
+func QuoteExpired(id string) *Error {
+	return New(http.StatusConflict, "QUOTE_EXPIRED", map[string]any{"quote_id": id})
+}
+
+func QuoteAlreadyUsed(id string) *Error {
+	return New(http.StatusConflict, "QUOTE_ALREADY_USED", map[string]any{"quote_id": id})
+}
+
+// QuoteMismatch — buyurtma maydonlari (tur, o'rindiqlar, sinf, yuk mashinasi, manzillar) taklifdagidan farq qiladi.
+func QuoteMismatch(id string) *Error {
+	return New(http.StatusConflict, "QUOTE_MISMATCH", map[string]any{"quote_id": id})
+}

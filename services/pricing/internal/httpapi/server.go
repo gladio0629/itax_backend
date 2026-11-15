@@ -164,6 +164,8 @@ type calculateResp struct {
 	DistanceM     int   `json:"distance_m"`
 	DurationS     int   `json:"duration_s"`
 	TariffVersion int   `json:"tariff_version"`
+	// Lines — narx tarkibi; yig'indisi doim price ga teng.
+	Lines []calc.Line `json:"lines"`
 }
 
 func (s *Server) calculate(w http.ResponseWriter, r *http.Request) error {
@@ -186,7 +188,7 @@ func (s *Server) calculate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, calculateResp{Price: q.Price, Commission: q.Commission, DistanceM: q.DistanceM, DurationS: q.DurationS, TariffVersion: q.TariffVersion})
+	writeJSON(w, http.StatusOK, calculateResp{Price: q.Price, Commission: q.Commission, DistanceM: q.DistanceM, DurationS: q.DurationS, TariffVersion: q.TariffVersion, Lines: q.Lines})
 	return nil
 }
 

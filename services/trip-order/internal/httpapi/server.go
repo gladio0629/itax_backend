@@ -82,6 +82,18 @@ func (s *Server) Handler() http.Handler {
 
 	const P, D, ANY = authn.RolePassenger, authn.RoleDriver, ""
 	mux.HandleFunc("POST /api/v1/orders", s.authed(P, s.createOrder))
+	mux.HandleFunc("POST /api/v1/orders/quote", s.authed(P, s.quote))
+	mux.HandleFunc("GET /api/v1/orders/seat-map", s.authed(P, s.seatMap))
+
+	// Ma'lumotnomalar (token shart emas) va manzil qidiruvi (server tomonida; token kerak — ochiq geocoder bo'lib qolmasin).
+	mux.HandleFunc("GET /api/v1/cities", s.handle(s.cities))
+	mux.HandleFunc("GET /api/v1/routes/popular", s.handle(s.popularRoutes))
+	mux.HandleFunc("GET /api/v1/delivery/vehicles", s.handle(s.deliveryVehicles))
+	mux.HandleFunc("GET /api/v1/places/search", s.authed(ANY, s.placesSearch))
+	mux.HandleFunc("GET /api/v1/places/reverse", s.authed(ANY, s.placesReverse))
+	mux.HandleFunc("GET /api/v1/places/saved", s.authed(P, s.savedList))
+	mux.HandleFunc("POST /api/v1/places/saved", s.authed(P, s.savedCreate))
+	mux.HandleFunc("DELETE /api/v1/places/saved/{id}", s.authed(P, s.savedDelete))
 	mux.HandleFunc("GET /api/v1/orders/history", s.authed(P, s.history))
 	mux.HandleFunc("GET /api/v1/orders/{id}", s.authed(ANY, s.getOrder))
 	mux.HandleFunc("PATCH /api/v1/orders/{id}", s.authed(P, s.updateOrder))

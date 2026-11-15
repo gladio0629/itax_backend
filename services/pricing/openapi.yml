@@ -79,13 +79,26 @@ components:
           not: { anyOf: [{ required: [seats] }, { required: [car_class] }] }
     CalculateResponse:
       type: object
-      required: [price, commission, distance_m, duration_s, tariff_version]
+      required: [price, commission, distance_m, duration_s, tariff_version, lines]
       properties:
         price: { type: integer, description: Tiyinda (so'm × 100), butun son }
         commission: { type: integer, description: "Tiyinda; tarifdagi komissiya foizidan (vazifada ko'rsatilmagan, lekin Trip & Order va Wallet uchun kerak)" }
         distance_m: { type: integer, description: "Haversine × yo'l koeffitsienti (1.3), metrda" }
         duration_s: { type: integer, description: "Taxminiy davomiylik, soniyada (o'rtacha tezlik bo'yicha)" }
         tariff_version: { type: integer, description: Hisobda ishlatilgan tarif versiyasi (audit uchun) }
+        lines:
+          type: array
+          description: |
+            Narx tarkibi. Qatorlar yig'indisi DOIM `price` ga teng (oxirgi qator yaxlitlash/minimal narx qoldig'ini oladi).
+            Kalitlar klient i18n kalitlari: `quote.seatFare {count}`, `quote.carFare`, `quote.class.komfort|biznes|miniven {pct}`,
+            `quote.cargoBase`, `quote.cargoDistance {km}`.
+          items:
+            type: object
+            required: [key, amount]
+            properties:
+              key: { type: string }
+              params: { type: object, additionalProperties: true }
+              amount: { type: integer, description: Tiyinda }
     Error:
       type: object
       required: [error]

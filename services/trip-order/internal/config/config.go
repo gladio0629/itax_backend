@@ -35,6 +35,11 @@ type Config struct {
 	// Rejalashtirilgan buyurtma eng ko'pi bilan qancha oldin berilishi mumkin.
 	MaxScheduleAhead time.Duration `envconfig:"MAX_SCHEDULE_AHEAD" default:"720h"`
 	SweepInterval    time.Duration `envconfig:"SWEEP_INTERVAL" default:"5s"`
+	// Vaqt oralig'i (scheduled_from..scheduled_to): eng qisqa va eng uzun oraliq.
+	MinScheduleRange time.Duration `envconfig:"MIN_SCHEDULE_RANGE" default:"15m"`
+	MaxScheduleRange time.Duration `envconfig:"MAX_SCHEDULE_RANGE" default:"168h"`
+	// Narx taklifi (POST /orders/quote) shu muddat amal qiladi.
+	QuoteTTL time.Duration `envconfig:"QUOTE_TTL" default:"10m"`
 
 	// F-24: faol buyurtmalar limiti.
 	PassengerActiveLimit int `envconfig:"PASSENGER_ACTIVE_LIMIT" default:"3"`
@@ -94,6 +99,7 @@ func (c Config) validate() error {
 	for name, v := range map[string]time.Duration{
 		"SEARCH_TIMEOUT": c.SearchTimeout, "ACCEPT_LOCK_TTL": c.AcceptLockTTL,
 		"MAX_SCHEDULE_AHEAD": c.MaxScheduleAhead, "SWEEP_INTERVAL": c.SweepInterval, "EXTERNAL_TIMEOUT": c.ExternalTimeout,
+		"MIN_SCHEDULE_RANGE": c.MinScheduleRange, "MAX_SCHEDULE_RANGE": c.MaxScheduleRange, "QUOTE_TTL": c.QuoteTTL,
 	} {
 		if v <= 0 {
 			errs = append(errs, fmt.Errorf("%s musbat bo'lishi kerak", name))

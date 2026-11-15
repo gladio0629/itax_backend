@@ -99,6 +99,7 @@ func run(log *slog.Logger) error {
 	log.Info("ichki servislar", "pricing_real", ext.Real["pricing"], "matching_real", ext.Real["matching"], "wallet_real", ext.Real["wallet"])
 	svc := service.New(service.Options{
 		SearchTimeout: cfg.SearchTimeout, AcceptLockTTL: cfg.AcceptLockTTL, MaxScheduleAhead: cfg.MaxScheduleAhead,
+		MinScheduleRange: cfg.MinScheduleRange, MaxScheduleRange: cfg.MaxScheduleRange, QuoteTTL: cfg.QuoteTTL,
 		PassengerActiveLimit: cfg.PassengerActiveLimit, DriverActiveLimit: cfg.DriverActiveLimit,
 	}, st, guard.New(rdb), ext.Pricer, ext.Wallet, ext.Matcher, log)
 	svc.OnEvent(relay.Kick)

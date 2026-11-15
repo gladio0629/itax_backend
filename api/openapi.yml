@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: IZGO Taxi Platform API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     IZGO taksi platformasi uchun yagona API shartnomasi (Etap 1 — skelet).
     Barcha so'rovlar Kong gateway (http://localhost:8000) orqali o'tadi.
@@ -29,6 +29,8 @@ tags:
   - name: Admin Auth
   - name: Driver
   - name: Orders
+  - name: Places
+    description: Shaharlar, manzil qidiruvi (server tomonida), saqlangan manzillar, yo'nalishlar, yuk mashinalari
   - name: Trips
   - name: Wallet
   - name: Ratings
@@ -430,7 +432,210 @@ paths:
               schema: { $ref: '#/components/schemas/Order' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/QuoteNotFound' }
+        '409': { $ref: '#/components/responses/QuoteConflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/orders/quote:
+    post:
+      tags: [Orders]
+      summary: Narx taklifi (buyurtmadan oldin)
+      description: |
+        `POST /api/v1/orders` bilan bir xil kirish (`payment_method` ixtiyoriy, `quote_id` yo'q). Javobdagi
+        `quote_id` bilan yaratilgan buyurtma **aynan shu narx** bilan yoziladi — qayta hisoblanmaydi.
+        Taklif `expires_at` gacha (default 10 daqiqa) va **bir marta** amal qiladi, faqat egasi uchun.
+        Narxga ta'sir qiladigan maydonlar (`type`, `seats`/`seat_ids`, `car_class`, `vehicle_type`, `from`/`to` koordinatalari)
+        buyurtmada taklifdagidek bo'lishi shart, aks holda `409 QUOTE_MISMATCH`. Vaqt, to'lov usuli, izoh va manzil matni
+        narxga ta'sir qilmaydi — ularni o'zgartirish mumkin.
+        `lines` yig'indisi doim `price` ga teng. Kalitlar klient i18n kalitlari: `quote.seatFare {count}`, `quote.carFare`,
+        `quote.class.komfort|biznes|miniven {pct}`, `quote.cargoBase`, `quote.cargoDistance {km}`.
+      operationId: orderQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteRequest' }
+      responses:
+        '200':
+          description: Narx taklifi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/orders/seat-map:
+    get:
+      tags: [Orders]
+      summary: O'rindiqlar xaritasi (yo'nalish bo'yicha)
+      description: |
+        To'rtta joy: `front`, `back-left`, `back-mid`, `back-right`. Narx o'rindiqlar SONIGA bog'liq, shuning uchun har joy
+        narxi = 1 o'rindiq narxi. Bir mashinaga bir nechta buyurtmani jamlash (pooling) hali yo'q — har buyurtma alohida
+        mashina, shuning uchun `taken` hozircha doim `false`. Tanlangan joylar `OrderCreate.seat_ids` da yuboriladi.
+      operationId: orderSeatMap
+      parameters:
+        - { name: from_lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: from_lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: to_lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: to_lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+      responses:
+        '200':
+          description: O'rindiqlar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatMap' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  # =================================================================== PLACES
+  /api/v1/cities:
+    get:
+      tags: [Places]
+      summary: Shaharlar katalogi
+      description: "Token shart emas. ID lar barqaror (UUIDv5 `izgo:city:<slug>`). `Cache-Control: public, max-age=300`."
+      operationId: citiesList
+      security: []
+      responses:
+        '200':
+          description: Shaharlar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CityList' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/places/search:
+    get:
+      tags: [Places]
+      summary: Manzil qidiruvi (server tomonida)
+      description: |
+        Shaharlar va platforma manzillar bazasi (gazetteer) bo'yicha qidiradi; tashqi geocoder kaliti klientga chiqmaydi.
+        Qidiruv katta-kichik harf va apostroflarga befarq (`fargona` → Farg'ona). Avval nomi `q` bilan boshlanganlar,
+        so'ng `near_*` berilsa masofa bo'yicha. Yo'lovchi yoki haydovchi tokeni kerak.
+      operationId: placesSearch
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+        - { name: near_lat, in: query, required: false, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: near_lng, in: query, required: false, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: city_id, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200':
+          description: Topilgan manzillar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/places/reverse:
+    get:
+      tags: [Places]
+      summary: Nuqta → manzil nomi (teskari geocoding)
+      description: |
+        2 km ichidagi eng yaqin bazadagi manzil, bo'lmasa eng yaqin shahar (`kind: city`). `distance_m` — nuqtadan
+        topilgan joygacha. Buyurtmada klient o'zi tanlagan koordinatani yuboradi; bu faqat nom uchun.
+      operationId: placesReverse
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+      responses:
+        '200':
+          description: Eng yaqin joy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Place' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/places/saved:
+    get:
+      tags: [Places]
+      summary: Saqlangan manzillar (yo'lovchi)
+      operationId: placesSavedList
+      responses:
+        '200':
+          description: Saqlangan manzillar (eskidan yangiga)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedPlaceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Places]
+      summary: Manzilni saqlash
+      description: "Foydalanuvchi boshiga ko'pi bilan 20 ta; ortig'i `403 FORBIDDEN` (`reason: saved_places_limit`)."
+      operationId: placesSavedCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SavedPlaceCreate' }
+      responses:
+        '201':
+          description: Saqlangan manzil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedPlace' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/places/saved/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [Places]
+      summary: Saqlangan manzilni o'chirish
+      operationId: placesSavedDelete
+      responses:
+        '204': { description: O'chirildi }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/routes/popular:
+    get:
+      tags: [Places]
+      summary: Mashhur shaharlararo yo'nalishlar
+      description: |
+        Token shart emas. `price_from` — shahar markazlari orasida 1 o'rindiq narxi (Pricing hisoblagan, 5 daqiqa kesh;
+        hisoblab bo'lmasa `null`). Bu ko'rsatish uchun; buyurtma narxi faqat `orders/quote` dan.
+      operationId: routesPopular
+      security: []
+      responses:
+        '200':
+          description: Yo'nalishlar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PopularRouteList' }
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/delivery/vehicles:
+    get:
+      tags: [Places]
+      summary: Yuk mashinalari (S, M, L, XL, XXL, 3XL)
+      description: |
+        Token shart emas. `vehicle_type` — `OrderCreate.vehicle_type` qiymati (enum o'zgarmaydi), `size_label` — klient
+        tugmasi: spark=S, damas=M, labo=L, isuzu=XL, isuzu2=XXL, fura=3XL. O'lchamlar — yuk bo'limi, sm.
+      operationId: deliveryVehicles
+      security: []
+      responses:
+        '200':
+          description: Mashinalar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryVehicleList' }
         default: { $ref: '#/components/responses/InternalError' }
 
   /api/v1/orders/history:
@@ -1723,6 +1928,21 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: { key: TARIFF_NOT_FOUND, params: { tariff_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6 } } }
+    QuoteNotFound:
+      description: QUOTE_NOT_FOUND — narx taklifi yo'q yoki boshqa foydalanuvchiniki
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { key: QUOTE_NOT_FOUND, params: { quote_id: 018f0000-0000-7000-8000-000000000000 } } }
+    QuoteConflict:
+      description: |
+        Narx taklifini ishlatib bo'lmaydi (buyurtma yaratilmaydi, narx jimgina qayta hisoblanmaydi):
+        `QUOTE_EXPIRED` — muddati o'tgan; `QUOTE_ALREADY_USED` — boshqa buyurtmada ishlatilgan;
+        `QUOTE_MISMATCH` — narxga ta'sir qiladigan maydonlar taklifdagidan farq qiladi. Klient yangi `orders/quote` so'raydi.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { key: QUOTE_EXPIRED, params: { quote_id: 018f0000-0000-7000-8000-000000000000 } } }
     OrderNotFound:
       description: ORDER_NOT_FOUND
       content:
@@ -2111,6 +2331,11 @@ components:
       type: string
       enum: [searching, accepted, arrived, in_progress, completed, cancelled, expired]
 
+    SeatId:
+      type: string
+      enum: [front, back-left, back-mid, back-right]
+      description: Mashinadagi o'rindiq joyi
+
     OrderCreate:
       type: object
       required: [type, from, to, payment_method]
@@ -2121,7 +2346,14 @@ components:
           type: integer
           minimum: 1
           maximum: 4
-          description: O'rindiqlar soni (passenger uchun; car_class bilan birga yuborilmaydi)
+          description: O'rindiqlar soni (passenger uchun; car_class bilan birga yuborilmaydi). `seat_ids` bilan birga bo'lsa soni teng bo'lishi shart
+        seat_ids:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SeatId' }
+          description: Tanlangan o'rindiq joylari (passenger). O'rindiqlar soni = elementlar soni; narx soniga bog'liq
         car_class:
           allOf: [{ $ref: '#/components/schemas/CarClass' }]
           description: Butun mashina turi (seats o'rniga)
@@ -2130,22 +2362,224 @@ components:
           description: Yetkazib berish (delivery) uchun majburiy; passenger uchun yuborilmaydi
         from: { $ref: '#/components/schemas/GeoPoint' }
         to: { $ref: '#/components/schemas/GeoPoint' }
-        scheduled_at:
-          type: string
-          format: date-time
-          description: Bo'sh bo'lsa — hozir
+        scheduled_at: { type: string, format: date-time, description: "Aniq vaqt. Hech qaysi vaqt maydoni bo'lmasa — hozir" }
+        scheduled_from: { type: string, format: date-time, description: "Oraliq boshi" }
+        scheduled_to: { type: string, format: date-time, description: "Oraliq oxiri" }
         payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         comment: { type: string, maxLength: 200 }
+        quote_id:
+          type: string
+          format: uuid
+          description: |
+            `POST /api/v1/orders/quote` natijasi. Berilsa — buyurtma aynan taklifdagi narx bilan yaratiladi (aks holda 404/409,
+            buyurtma yaratilmaydi). Berilmasa — narx hozirgi tarif bo'yicha hisoblanadi (masalan "qayta qidirish").
       description: |
         Narx, masofa va status YUBORILMAYDI — server hisoblaydi.
-        `type = passenger` — `seats` YOKI `car_class` (bittasi). `type = delivery` — faqat `vehicle_type`.
+        `type = passenger` — `seats`/`seat_ids` YOKI `car_class` (bittasi). `type = delivery` — faqat `vehicle_type`.
+
+        Vaqt: hech biri yo'q — hozir ("haydovchi istagan"); `scheduled_at` — aniq vaqt; `scheduled_from` + `scheduled_to` —
+        oraliq (masalan 15-kuni 08:00 dan 17-kuni 12:00 gacha istalgan vaqt). `scheduled_at` oraliq bilan birga yuborilmaydi.
+        Oraliq: `from` kelajakda, `from < to`, kamida 15 daqiqa, ko'pi bilan 7 kun, `to` ko'pi bilan 30 kun oldin.
       oneOf:
-        - required: [seats]
+        - anyOf: [{ required: [seats] }, { required: [seat_ids] }]
           not: { anyOf: [{ required: [car_class] }, { required: [vehicle_type] }] }
         - required: [car_class]
-          not: { anyOf: [{ required: [seats] }, { required: [vehicle_type] }] }
+          not: { anyOf: [{ required: [seats] }, { required: [seat_ids] }, { required: [vehicle_type] }] }
         - required: [vehicle_type]
-          not: { anyOf: [{ required: [seats] }, { required: [car_class] }] }
+          not: { anyOf: [{ required: [seats] }, { required: [seat_ids] }, { required: [car_class] }] }
+
+    QuoteRequest:
+      description: "`OrderCreate` bilan bir xil, faqat `payment_method` ixtiyoriy va `quote_id` yo'q."
+      type: object
+      required: [type, from, to]
+      additionalProperties: false
+      properties:
+        type: { $ref: '#/components/schemas/OrderType' }
+        seats: { type: integer, minimum: 1, maximum: 4 }
+        seat_ids:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SeatId' }
+        car_class: { $ref: '#/components/schemas/CarClass' }
+        vehicle_type: { $ref: '#/components/schemas/VehicleType' }
+        from: { $ref: '#/components/schemas/GeoPoint' }
+        to: { $ref: '#/components/schemas/GeoPoint' }
+        scheduled_at: { type: string, format: date-time }
+        scheduled_from: { type: string, format: date-time }
+        scheduled_to: { type: string, format: date-time }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+        comment: { type: string, maxLength: 200 }
+
+    PriceLine:
+      type: object
+      required: [key, amount]
+      properties:
+        key: { type: string, description: 'Klient i18n kaliti, masalan `quote.seatFare`' }
+        params: { type: object, additionalProperties: true, description: 'Matnga qo''yiladigan qiymatlar (`count`, `pct`, `km`)' }
+        amount: { allOf: [{ $ref: '#/components/schemas/Money' }], readOnly: true }
+
+    Quote:
+      type: object
+      readOnly: true
+      required: [quote_id, price, lines, distance_m, duration_s, expires_at]
+      properties:
+        quote_id: { type: string, format: uuid }
+        price: { $ref: '#/components/schemas/Money' }
+        lines:
+          type: array
+          description: Narx tarkibi; yig'indisi doim `price`
+          items: { $ref: '#/components/schemas/PriceLine' }
+        distance_m: { type: integer }
+        duration_s: { type: integer }
+        expires_at: { type: string, format: date-time, description: Shu vaqtgacha buyurtmada ishlatish mumkin (bir marta) }
+
+    SeatMap:
+      type: object
+      readOnly: true
+      required: [seats]
+      properties:
+        seats:
+          type: array
+          items:
+            type: object
+            required: [id, taken, price]
+            properties:
+              id: { $ref: '#/components/schemas/SeatId' }
+              taken: { type: boolean, description: Hozircha doim false (pooling yo'q) }
+              price: { $ref: '#/components/schemas/Money' }
+
+    City:
+      type: object
+      readOnly: true
+      required: [id, name, region, lat, lng]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Toshkent }
+        region: { type: string, example: Toshkent shahri }
+        lat: { type: number }
+        lng: { type: number }
+
+    CityList:
+      type: object
+      readOnly: true
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/City' } }
+
+    Place:
+      type: object
+      readOnly: true
+      required: [id, city_id, name, area, kind, lat, lng]
+      properties:
+        id: { type: string, format: uuid, description: "kind = city bo'lsa — shahar ID si" }
+        city_id: { type: string, format: uuid }
+        name: { type: string }
+        area: { type: string, description: Pastki qator (tuman/shahar) }
+        kind: { type: string, enum: [city, landmark, station, bus_station, airport, market, district, address] }
+        lat: { type: number }
+        lng: { type: number }
+        entrance: { type: [string, 'null'] }
+        distance_m: { type: [integer, 'null'], description: "near_* (qidiruv) yoki so'ralgan nuqtadan (reverse)" }
+
+    PlaceList:
+      type: object
+      readOnly: true
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Place' } }
+
+    PlaceDetails:
+      type: object
+      additionalProperties: false
+      description: Hammasi ixtiyoriy matn; bo'shlari saqlanmaydi
+      properties:
+        entrance: { type: string, maxLength: 20 }
+        floor: { type: string, maxLength: 20 }
+        apartment: { type: string, maxLength: 20 }
+        intercom: { type: string, maxLength: 20 }
+        note: { type: string, maxLength: 200 }
+
+    SavedPlaceCreate:
+      type: object
+      required: [name, lat, lng]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: Uy }
+        area: { type: string, maxLength: 200 }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        details: { $ref: '#/components/schemas/PlaceDetails' }
+
+    SavedPlace:
+      type: object
+      readOnly: true
+      required: [id, name, area, lat, lng, details, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        area: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        details:
+          oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/PlaceDetails' }]
+        created_at: { type: string, format: date-time }
+
+    SavedPlaceList:
+      type: object
+      readOnly: true
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/SavedPlace' } }
+
+    RouteEnd:
+      type: object
+      readOnly: true
+      required: [city_id, lat, lng, address]
+      properties:
+        city_id: { type: string, format: uuid }
+        lat: { type: number }
+        lng: { type: number }
+        address: { type: string, description: Shahar nomi }
+
+    PopularRouteList:
+      type: object
+      readOnly: true
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [from, to, distance_m, price_from]
+            properties:
+              from: { $ref: '#/components/schemas/RouteEnd' }
+              to: { $ref: '#/components/schemas/RouteEnd' }
+              distance_m: { type: [integer, 'null'] }
+              price_from: { type: [integer, 'null'], description: '1 o''rindiq narxi, tiyinda' }
+
+    DeliveryVehicleList:
+      type: object
+      readOnly: true
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [vehicle_type, size_label, dimensions_cm, max_weight_kg]
+            properties:
+              vehicle_type: { $ref: '#/components/schemas/VehicleType' }
+              size_label: { type: string, enum: [S, M, L, XL, XXL, 3XL] }
+              dimensions_cm:
+                type: object
+                required: [width, depth, height]
+                properties:
+                  width: { type: integer }
+                  depth: { type: integer }
+                  height: { type: integer }
+              max_weight_kg: { type: integer }
 
     OrderUpdate:
       type: object
@@ -2154,10 +2588,18 @@ components:
       description: Faqat shu maydonlarni o'zgartirish so'raladi; server ruxsat beradi yoki rad etadi.
       properties:
         seats: { type: integer, minimum: 1, maximum: 4 }
+        seat_ids:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/SeatId' }
         car_class: { $ref: '#/components/schemas/CarClass' }
         vehicle_type: { $ref: '#/components/schemas/VehicleType' }
         to: { $ref: '#/components/schemas/GeoPoint' }
-        scheduled_at: { type: string, format: date-time }
+        scheduled_at: { type: string, format: date-time, description: Oraliq o'rniga aniq vaqt }
+        scheduled_from: { type: string, format: date-time, description: Oraliq (scheduled_to bilan birga; aniq vaqt o'rniga) }
+        scheduled_to: { type: string, format: date-time }
         payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         comment: { type: string, maxLength: 200 }
 
@@ -2175,15 +2617,32 @@ components:
         id: { $ref: '#/components/schemas/Uuid' }
         type: { $ref: '#/components/schemas/OrderType' }
         seats: { type: integer }
+        seat_ids:
+          type: array
+          items: { $ref: '#/components/schemas/SeatId' }
+          description: Faqat joylar tanlangan bo'lsa
         car_class: { $ref: '#/components/schemas/CarClass' }
         vehicle_type: { $ref: '#/components/schemas/VehicleType' }
         from: { $ref: '#/components/schemas/GeoPoint' }
         to: { $ref: '#/components/schemas/GeoPoint' }
+        from_city_id: { type: [string, 'null'], format: uuid, readOnly: true, description: "Eng yaqin shahar (50 km ichida), aks holda null" }
+        to_city_id: { type: [string, 'null'], format: uuid, readOnly: true }
         scheduled_at: { type: [string, 'null'], format: date-time }
+        scheduled_from: { type: [string, 'null'], format: date-time }
+        scheduled_to: { type: [string, 'null'], format: date-time }
         payment_method: { $ref: '#/components/schemas/PaymentMethod' }
         comment: { type: [string, 'null'] }
         status: { allOf: [{ $ref: '#/components/schemas/OrderStatus' }], readOnly: true }
         price: { allOf: [{ $ref: '#/components/schemas/Money' }], readOnly: true }
+        price_lines:
+          type: array
+          readOnly: true
+          description: Narx tarkibi; yig'indisi doim `price` (eski buyurtmalarda bitta qator)
+          items: { $ref: '#/components/schemas/PriceLine' }
+        quote_id: { type: [string, 'null'], format: uuid, readOnly: true }
+        cancel_reason: { type: [string, 'null'], readOnly: true }
+        editable: { type: boolean, readOnly: true, description: "Server qarori: PATCH ruxsat etiladimi" }
+        can_cancel: { type: boolean, readOnly: true, description: "Server qarori: yo'lovchi bekor qila oladimi" }
         distance_m: { type: integer, readOnly: true }
         duration_s: { type: integer, readOnly: true, description: Taxminiy davomiylik }
         driver:
@@ -2214,14 +2673,23 @@ components:
         order_id: { $ref: '#/components/schemas/Uuid' }
         type: { $ref: '#/components/schemas/OrderType' }
         seats: { type: integer, readOnly: true }
+        seat_ids: { type: array, items: { $ref: '#/components/schemas/SeatId' }, readOnly: true }
         car_class: { $ref: '#/components/schemas/CarClass' }
         vehicle_type: { $ref: '#/components/schemas/VehicleType' }
         from: { $ref: '#/components/schemas/GeoPoint' }
         to: { $ref: '#/components/schemas/GeoPoint' }
+        from_city_id: { type: [string, 'null'], format: uuid, readOnly: true }
+        to_city_id: { type: [string, 'null'], format: uuid, readOnly: true }
+        scheduled_at: { type: [string, 'null'], format: date-time, readOnly: true, description: Olib ketish vaqti (aniq) }
+        scheduled_from: { type: [string, 'null'], format: date-time, readOnly: true }
+        scheduled_to: { type: [string, 'null'], format: date-time, readOnly: true }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+        comment: { type: [string, 'null'], readOnly: true }
         price: { allOf: [{ $ref: '#/components/schemas/Money' }], readOnly: true }
         commission: { allOf: [{ $ref: '#/components/schemas/Money' }], readOnly: true }
         distance_m: { type: integer, readOnly: true }
         pickup_eta_s: { type: integer, readOnly: true }
+        created_at: { type: string, format: date-time, readOnly: true }
         expires_at: { type: string, format: date-time, readOnly: true }
 
     OfferPage:

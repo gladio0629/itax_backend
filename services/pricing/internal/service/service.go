@@ -35,6 +35,8 @@ type Quote struct {
 	DistanceM     int
 	DurationS     int
 	TariffVersion int
+	// Lines — narx tarkibi (yig'indisi = Price).
+	Lines []calc.Line
 }
 
 func (s *Service) Calculate(ctx context.Context, r Request) (Quote, error) {
@@ -46,9 +48,11 @@ func (s *Service) Calculate(ctx context.Context, r Request) (Quote, error) {
 	if err != nil {
 		return Quote{}, fmt.Errorf("pricing: marshrut: %w", err)
 	}
-	res, err := calc.Price(t, calc.Input{Type: r.Type, Seats: r.Seats, CarClass: r.CarClass, VehicleType: r.VehicleType, DistanceM: rt.DistanceM})
+	in := calc.Input{Type: r.Type, Seats: r.Seats, CarClass: r.CarClass, VehicleType: r.VehicleType, DistanceM: rt.DistanceM}
+	res, err := calc.Price(t, in)
 	if err != nil {
 		return Quote{}, err
 	}
-	return Quote{Price: res.Price, Commission: res.Commission, DistanceM: rt.DistanceM, DurationS: rt.DurationS, TariffVersion: t.Version}, nil
+	return Quote{Price: res.Price, Commission: res.Commission, DistanceM: rt.DistanceM, DurationS: rt.DurationS, TariffVersion: t.Version,
+		Lines: calc.Lines(t, in, res.Price)}, nil
 }

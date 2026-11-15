@@ -195,6 +195,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	clock := &Clock{t: time.Now().UTC().Truncate(time.Microsecond)}
 	opt := service.Options{
 		SearchTimeout: 2 * time.Minute, AcceptLockTTL: 30 * time.Second, MaxScheduleAhead: 720 * time.Hour,
+		MinScheduleRange: 15 * time.Minute, MaxScheduleRange: 168 * time.Hour, QuoteTTL: 10 * time.Minute,
 		PassengerActiveLimit: 3, DriverActiveLimit: 1,
 	}
 	for _, o := range opts {

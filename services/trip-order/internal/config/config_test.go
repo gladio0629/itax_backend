@@ -11,6 +11,7 @@ func base() Config {
 		DBPassword: "x", RedisURL: "redis://r", NATSURL: "nats://n", JWTPublicKeyPath: "/k",
 		SearchTimeout: time.Minute, AcceptLockTTL: time.Second, MaxScheduleAhead: time.Hour, SweepInterval: time.Second,
 		ExternalTimeout: 3 * time.Second, PassengerActiveLimit: 3, DriverActiveLimit: 1,
+		MinScheduleRange: 15 * time.Minute, MaxScheduleRange: 168 * time.Hour, QuoteTTL: 10 * time.Minute,
 	}
 }
 
@@ -28,6 +29,7 @@ func TestValidateExternal(t *testing.T) {
 		{"qisqa token", func(c *Config) { c.PricingURL, c.InternalTokens = "http://p:1", tok+",short" }, "16 belgi"},
 		{"noto'g'ri URL", func(c *Config) { c.PricingURL, c.InternalTokens = "pricing:8014", tok }, "PRICING_URL"},
 		{"timeout 0", func(c *Config) { c.ExternalTimeout = 0 }, "EXTERNAL_TIMEOUT"},
+		{"quote ttl 0", func(c *Config) { c.QuoteTTL = 0 }, "QUOTE_TTL"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := base()

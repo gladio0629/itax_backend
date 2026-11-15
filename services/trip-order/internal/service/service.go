@@ -21,6 +21,9 @@ type Options struct {
 	SearchTimeout        time.Duration
 	AcceptLockTTL        time.Duration
 	MaxScheduleAhead     time.Duration
+	MinScheduleRange     time.Duration
+	MaxScheduleRange     time.Duration
+	QuoteTTL             time.Duration
 	PassengerActiveLimit int
 	DriverActiveLimit    int
 }
@@ -35,6 +38,7 @@ type Service struct {
 	log     *slog.Logger
 	now     func() time.Time
 	onEvent func()
+	cat     catalogCache
 }
 
 func New(opt Options, st *store.Store, g *guard.Guard, p external.Pricer, w external.Wallet, m external.Matcher, log *slog.Logger) *Service {
@@ -124,12 +128,25 @@ func (s *Service) release(ctx context.Context, k guard.Kind, id uuid.UUID) {
 type CreateInput struct {
 	Type          domain.OrderType
 	Seats         *int
+	SeatIDs       []domain.SeatID
 	CarClass      *domain.CarClass
 	VehicleType   *domain.VehicleType
 	From, To      domain.Point
 	ScheduledAt   *time.Time
+	ScheduledFrom *time.Time
+	ScheduledTo   *time.Time
 	PaymentMethod domain.PaymentMethod
 	Comment       *string
+	// QuoteID — POST /orders/quote natijasi: buyurtma aynan shu narx bilan yaratiladi.
+	QuoteID *uuid.UUID
+}
+
+func (in CreateInput) order(passenger uuid.UUID) domain.Order {
+	return domain.Order{
+		PassengerID: passenger, Type: in.Type, Seats: in.Seats, SeatIDs: in.SeatIDs, CarClass: in.CarClass, VehicleType: in.VehicleType,
+		From: in.From, To: in.To, ScheduledAt: in.ScheduledAt, ScheduledFrom: in.ScheduledFrom, ScheduledTo: in.ScheduledTo,
+		PaymentMethod: in.PaymentMethod, Comment: in.Comment, QuoteID: in.QuoteID,
+	}
 }
 
 func (s *Service) CreateOrder(ctx context.Context, passenger uuid.UUID, in CreateInput, idemKey *string, trace string) (domain.Order, error) {
@@ -138,19 +155,10 @@ func (s *Service) CreateOrder(ctx context.Context, passenger uuid.UUID, in Creat
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("uuid: %w", err)
 	}
-	o := domain.Order{
-		ID: id, PassengerID: passenger, Type: in.Type, Seats: in.Seats, CarClass: in.CarClass, VehicleType: in.VehicleType,
-		From: in.From, To: in.To, ScheduledAt: in.ScheduledAt, PaymentMethod: in.PaymentMethod, Comment: in.Comment,
-		Status: domain.Searching, IdempotencyKey: idemKey, CreatedAt: now, UpdatedAt: now,
-		SearchExpiresAt: s.searchDeadline(now, in.ScheduledAt),
-	}
-	if err := o.CheckShape(); err != nil {
-		return domain.Order{}, apperr.Validation(map[string]string{"type": "invalid_combination"})
-	}
-	if sameLocation(o.From, o.To) {
-		return domain.Order{}, apperr.Validation(map[string]string{"to": "same_as_from"})
-	}
-	if err := s.checkSchedule(now, o.ScheduledAt); err != nil {
+	o := in.order(passenger)
+	o.ID, o.Status, o.IdempotencyKey, o.CreatedAt, o.UpdatedAt = id, domain.Searching, idemKey, now, now
+	o.SearchExpiresAt = s.searchDeadline(now, scheduleBase(o))
+	if err := s.validateNew(now, o); err != nil {
 		return domain.Order{}, err
 	}
 
@@ -163,13 +171,21 @@ func (s *Service) CreateOrder(ctx context.Context, passenger uuid.UUID, in Creat
 		}
 	}
 
-	q, err := s.pricer.Quote(ctx, external.QuoteRequest{
-		Type: o.Type, Seats: o.Seats, CarClass: o.CarClass, VehicleType: o.VehicleType, From: o.From, To: o.To, ScheduledAt: o.ScheduledAt,
-	})
-	if err != nil {
-		return domain.Order{}, fmt.Errorf("pricing: %w", err)
+	// Narx: quote_id bo'lsa — aynan taklifdagi narx (mos kelmasa aniq xato); bo'lmasa — hozirgi tarif bo'yicha.
+	if o.QuoteID != nil {
+		q, err := s.quoted(ctx, passenger, o, now)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		o.Price, o.Commission, o.DistanceM, o.DurationS, o.Lines = q.Price, q.Commission, q.DistanceM, q.DurationS, q.Lines
+	} else {
+		q, err := s.price(ctx, o)
+		if err != nil {
+			return domain.Order{}, err
+		}
+		o.Price, o.Commission, o.DistanceM, o.DurationS, o.Lines = q.Price, q.Commission, q.DistanceM, q.DurationS, q.Lines
 	}
-	o.Price, o.Commission, o.DistanceM, o.DurationS = q.Price, q.Commission, q.DistanceM, q.DurationS
+	o.FromCityID, o.ToCityID = s.cityOf(ctx, o.From), s.cityOf(ctx, o.To)
 
 	ok, err := s.reserve(ctx, guard.Passenger, passenger, s.opt.PassengerActiveLimit,
 		func(c context.Context) (int, error) { return s.st.CountActiveOrders(c, passenger) })
@@ -206,6 +222,9 @@ func (s *Service) CreateOrder(ctx context.Context, passenger uuid.UUID, in Creat
 		s.release(ctx, guard.Passenger, passenger) // joy yaratilmadi
 		if errors.Is(err, domain.ErrLimitReached) {
 			return domain.Order{}, apperr.Forbidden("active_orders_limit", map[string]any{"limit": s.opt.PassengerActiveLimit})
+		}
+		if errors.Is(err, domain.ErrQuoteUsed) {
+			return domain.Order{}, apperr.QuoteAlreadyUsed(o.QuoteID.String())
 		}
 		if err != nil {
 			return domain.Order{}, err
@@ -299,6 +318,9 @@ func (s *Service) Offers(ctx context.Context, driver uuid.UUID, cursor string, l
 
 type UpdateInput struct {
 	Seats         *int
+	SeatIDs       []domain.SeatID
+	ScheduledFrom *time.Time
+	ScheduledTo   *time.Time
 	CarClass      *domain.CarClass
 	VehicleType   *domain.VehicleType
 	To            *domain.Point
@@ -323,26 +345,31 @@ func (s *Service) UpdateOrder(ctx context.Context, passenger, id uuid.UUID, in U
 		now := s.now()
 
 		o := cur
-		if in.Seats != nil && in.CarClass != nil {
+		if (in.Seats != nil || in.SeatIDs != nil) && in.CarClass != nil {
 			return domain.Order{}, apperr.Validation(map[string]string{"car_class": "conflicts_with_seats"})
 		}
 		if in.Seats != nil {
-			o.Seats, o.CarClass = in.Seats, nil
+			o.Seats, o.SeatIDs, o.CarClass = in.Seats, nil, nil
+		}
+		if in.SeatIDs != nil {
+			n := len(in.SeatIDs)
+			o.Seats, o.SeatIDs, o.CarClass = &n, in.SeatIDs, nil
 		}
 		if in.CarClass != nil {
-			o.CarClass, o.Seats = in.CarClass, nil
+			o.CarClass, o.Seats, o.SeatIDs = in.CarClass, nil, nil
 		}
 		if in.VehicleType != nil {
 			o.VehicleType = in.VehicleType
 		}
 		if in.To != nil {
 			o.To = *in.To
+			o.ToCityID = s.cityOf(ctx, o.To)
 		}
-		if in.ScheduledAt != nil {
-			if err := s.checkSchedule(now, in.ScheduledAt); err != nil {
+		if in.ScheduledAt != nil || in.ScheduledFrom != nil || in.ScheduledTo != nil {
+			if err := s.checkTiming(now, in.ScheduledAt, in.ScheduledFrom, in.ScheduledTo); err != nil {
 				return domain.Order{}, err
 			}
-			o.ScheduledAt = in.ScheduledAt
+			o.ScheduledAt, o.ScheduledFrom, o.ScheduledTo = in.ScheduledAt, in.ScheduledFrom, in.ScheduledTo
 		}
 		if in.PaymentMethod != nil {
 			o.PaymentMethod = *in.PaymentMethod
@@ -353,7 +380,7 @@ func (s *Service) UpdateOrder(ctx context.Context, passenger, id uuid.UUID, in U
 		if err := o.CheckShape(); err != nil {
 			f := map[string]string{"body": "invalid_combination"}
 			switch {
-			case o.Type == domain.TypeDelivery && (in.Seats != nil || in.CarClass != nil):
+			case o.Type == domain.TypeDelivery && (in.Seats != nil || in.SeatIDs != nil || in.CarClass != nil):
 				f = map[string]string{"seats": "not_applicable_to_delivery"}
 				if in.CarClass != nil {
 					f = map[string]string{"car_class": "not_applicable_to_delivery"}
@@ -367,14 +394,12 @@ func (s *Service) UpdateOrder(ctx context.Context, passenger, id uuid.UUID, in U
 			return domain.Order{}, apperr.Validation(map[string]string{"to": "same_as_from"})
 		}
 
-		q, err := s.pricer.Quote(ctx, external.QuoteRequest{
-			Type: o.Type, Seats: o.Seats, CarClass: o.CarClass, VehicleType: o.VehicleType, From: o.From, To: o.To, ScheduledAt: o.ScheduledAt,
-		})
+		q, err := s.price(ctx, o)
 		if err != nil {
-			return domain.Order{}, fmt.Errorf("pricing: %w", err)
+			return domain.Order{}, err
 		}
-		o.Price, o.Commission, o.DistanceM, o.DurationS = q.Price, q.Commission, q.DistanceM, q.DurationS
-		o.SearchExpiresAt = s.searchDeadline(now, o.ScheduledAt)
+		o.Price, o.Commission, o.DistanceM, o.DurationS, o.Lines = q.Price, q.Commission, q.DistanceM, q.DurationS, q.Lines
+		o.SearchExpiresAt = s.searchDeadline(now, scheduleBase(o))
 
 		ok, err := s.st.UpdateSearching(ctx, o, cur.Version, now)
 		if err != nil {
@@ -639,6 +664,11 @@ func (s *Service) RunSweeper(ctx context.Context, every time.Duration) {
 				s.log.Warn("outbox tozalanmadi", "err", err)
 			} else if n > 0 {
 				s.log.Info("eski outbox yozuvlari tozalandi", "count", n)
+			}
+			if n, err := s.st.PurgeQuotes(ctx, s.now()); err != nil && ctx.Err() == nil {
+				s.log.Warn("eski narx takliflari tozalanmadi", "err", err)
+			} else if n > 0 {
+				s.log.Info("eski narx takliflari tozalandi", "count", n)
 			}
 		case <-t.C:
 			if n, err := s.Sweep(ctx); err != nil {

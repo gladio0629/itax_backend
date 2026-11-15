@@ -2,6 +2,7 @@ package external
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/izgo/trip-order/internal/domain"
@@ -24,7 +25,7 @@ func TestMockPricer(t *testing.T) {
 	base := QuoteRequest{Type: domain.TypePassenger, Seats: ip(4), From: from, To: near}
 
 	a := quote(t, base)
-	if a != quote(t, base) {
+	if !reflect.DeepEqual(a, quote(t, base)) {
 		t.Error("deterministik emas")
 	}
 	if a.Price%roundTo != 0 || a.Price < minFare || a.Commission != a.Price/10 || a.DistanceM <= 0 || a.DurationS <= 0 {

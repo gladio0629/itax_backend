@@ -112,10 +112,11 @@ type pricingCalculateReq struct {
 }
 
 type pricingCalculateResp struct {
-	Price      int64 `json:"price"`
-	Commission int64 `json:"commission"`
-	DistanceM  int   `json:"distance_m"`
-	DurationS  int   `json:"duration_s"`
+	Price      int64              `json:"price"`
+	Commission int64              `json:"commission"`
+	DistanceM  int                `json:"distance_m"`
+	DurationS  int                `json:"duration_s"`
+	Lines      []domain.PriceLine `json:"lines"`
 }
 
 func (p HTTPPricer) Quote(ctx context.Context, r QuoteRequest) (Quote, error) {
@@ -131,7 +132,21 @@ func (p HTTPPricer) Quote(ctx context.Context, r QuoteRequest) (Quote, error) {
 		return Quote{}, fmt.Errorf("pricing: noto'g'ri javob (price=%d commission=%d distance_m=%d duration_s=%d)",
 			out.Price, out.Commission, out.DistanceM, out.DurationS)
 	}
-	return Quote{Price: out.Price, Commission: out.Commission, DistanceM: out.DistanceM, DurationS: out.DurationS}, nil
+	q := Quote{Price: out.Price, Commission: out.Commission, DistanceM: out.DistanceM, DurationS: out.DurationS}
+	// Narx tarkibi faqat yig'indisi narxga teng va manfiy qatori bo'lmasa qabul qilinadi; aks holda chaqiruvchi bitta qator qo'yadi.
+	if len(out.Lines) > 0 && domain.SumLines(out.Lines) == out.Price && validLines(out.Lines) {
+		q.Lines = out.Lines
+	}
+	return q, nil
+}
+
+func validLines(ls []domain.PriceLine) bool {
+	for _, l := range ls {
+		if l.Key == "" || l.Amount < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Finalize — Pricing'da yakuniy narx endpointi hali yo'q: kelishilgan narx o'zgarmaydi (mock bilan bir xil).
