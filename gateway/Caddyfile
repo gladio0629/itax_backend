@@ -1,0 +1,21 @@
+# HTTPS/WSS old qismi: {$API_DOMAIN} uchun sertifikat avtomatik (Let's Encrypt), HTTP -> HTTPS yo'naltirish.
+# WebSocket (/ws) Upgrade'ni Caddy o'zi o'tkazadi. Kong faqat ichki tarmoqda (kong:8000).
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy kong:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	# Access log'da so'rov qatori query bilan yoziladi; eski /ws?token= ishlatilsa token ko'rinmasin
+	log {
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					replace token REDACTED
+				}
+				request>headers>Authorization delete
+				request>headers>Sec-Websocket-Protocol delete
+			}
+		}
+	}
+}

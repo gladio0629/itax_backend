@@ -454,6 +454,25 @@ services:
       retries: 5
     depends_on: [nats]
 
+  # HTTPS/WSS old qismi (ixtiyoriy, profil "tls"): Caddy Let's Encrypt sertifikatini o'zi oladi va Kong'ga uzatadi.
+  #   API_DOMAIN=api.example.uz docker compose --profile tls up -d
+  # DNS: API_DOMAIN -> shu server; 80 va 443 portlari ochiq bo'lishi kerak. docs/hosting.md
+  caddy:
+    image: caddy:2.8.4-alpine
+    profiles: [tls]
+    restart: unless-stopped
+    networks: [izgo]
+    environment:
+      # bo'sh bo'lsa Caddy ishga tushmaydi (faqat --profile tls bilan kerak)
+      API_DOMAIN: ${API_DOMAIN:-}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      kong: { condition: service_healthy }
+
 networks:
   izgo:
     name: izgo
@@ -463,3 +482,5 @@ volumes:
   redis_data:
   nats_data:
   driver_uploads:
+  caddy_data:
+  caddy_config:

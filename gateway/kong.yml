@@ -69,7 +69,8 @@ services:
     routes:
       - name: location
         paths: ["/api/v1/location"]
-        methods: [POST]
+        # OPTIONS — brauzer CORS preflight'i shu route'ga tushishi uchun (javobni cors plagini o'zi beradi)
+        methods: [POST, OPTIONS]
         strip_path: false
 
   - name: wallet
@@ -88,6 +89,26 @@ services:
         strip_path: false
 
 plugins:
+  # CORS — faqat 3 ta frontend domeni (client, driver, admin). Domenlar ma'lum bo'lgach shu ro'yxatni to'ldiring
+  # (va xuddi shu host'larni .env dagi WS_ALLOWED_ORIGINS ga — WebSocket'ga CORS qo'llanmaydi, Origin'ni notification
+  # o'zi tekshiradi). Wildcard yo'q; frontendlar cookie yubormaydi (credentials: "omit"), shuning uchun credentials=false.
+  - name: cors
+    config:
+      origins:
+        - "https://CLIENT_DOMAIN.example"   # TODO: yo'lovchi ilovasi, masalan https://izgo-client.vercel.app
+        - "https://DRIVER_DOMAIN.example"   # TODO: haydovchi ilovasi
+        - "https://ADMIN_DOMAIN.example"    # TODO: admin panel
+        # lokal ishlab chiqish (vite dev / preview)
+        - "http://localhost:5173"
+        - "http://localhost:5174"
+        - "http://localhost:5175"
+        - "http://localhost:4173"
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      headers: [Authorization, Content-Type, X-App, Idempotency-Key]
+      exposed_headers: [X-Request-ID, Retry-After]
+      credentials: false
+      max_age: 600
+      preflight_continue: false
   - name: correlation-id
     config:
       header_name: X-Request-ID
