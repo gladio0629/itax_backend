@@ -251,3 +251,21 @@ func TestSavedPlaces(t *testing.T) {
 		t.Fatalf("o'chmagan: %s", l.Raw)
 	}
 }
+
+// Narxga ta'sir qilmaydigan PATCH (izoh, to'lov, vaqt) tarif o'zgargan bo'lsa ham kelishilgan narxni o'zgartirmaydi;
+// o'rindiqlar soni o'zgarsa — qayta hisoblanadi.
+func TestPatchKeepsQuotedPrice(t *testing.T) {
+	e := newT(t)
+	p := e.passenger()
+	q := p.do("POST", "/api/v1/orders/quote", trip(nil))
+	o := p.order(t, map[string]any{"quote_id": q.str("quote_id")})
+	e.Pricer.Factor.Store(200) // tarif ikki barobar qimmatladi
+	u := p.do("PATCH", "/api/v1/orders/"+o.str("id"), map[string]any{"comment": "2-podyezd", "payment_method": "card"})
+	if u.Status != 200 || u.Body["price"] != q.Body["price"] || linesSum(t, u.Body["price_lines"]) != q.Body["price"].(float64) {
+		t.Fatalf("izoh o'zgarishi narxni o'zgartirdi: quote=%v patch=%s", q.Body["price"], u.Raw)
+	}
+	u = p.do("PATCH", "/api/v1/orders/"+o.str("id"), map[string]any{"seats": 3})
+	if u.Status != 200 || u.Body["price"].(float64) <= q.Body["price"].(float64) {
+		t.Fatalf("o'rindiqlar o'zgarganda narx qayta hisoblanmadi: %s", u.Raw)
+	}
+}

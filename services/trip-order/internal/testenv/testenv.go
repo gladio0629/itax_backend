@@ -135,6 +135,23 @@ func (w *FakeWallet) CheckDriver(_ context.Context, id uuid.UUID) (external.Wall
 	return external.WalletStatus{}, nil
 }
 
+// ScaledPricer — MockPricer narxini Factor/100 ga ko'paytiradi (testda tarif o'zgarishini taqlid qilish uchun).
+type ScaledPricer struct {
+	Factor atomic.Int64 // foizda; 0 = 100
+}
+
+func (p *ScaledPricer) Quote(ctx context.Context, r external.QuoteRequest) (external.Quote, error) {
+	q, err := external.MockPricer{}.Quote(ctx, r)
+	if f := p.Factor.Load(); f > 0 {
+		q.Price, q.Commission = q.Price*f/100, q.Commission*f/100
+	}
+	return q, err
+}
+
+func (p *ScaledPricer) Finalize(ctx context.Context, r external.FinalizeRequest) (external.Final, error) {
+	return external.MockPricer{}.Finalize(ctx, r)
+}
+
 type Option func(*service.Options)
 
 func PassengerLimit(n int) Option { return func(o *service.Options) { o.PassengerActiveLimit = n } }
@@ -149,6 +166,7 @@ type Env struct {
 	Svc    *service.Service
 	Clock  *Clock
 	Wallet *FakeWallet
+	Pricer *ScaledPricer
 	Server *httptest.Server
 	Opt    service.Options
 }
@@ -208,11 +226,12 @@ func New(t *testing.T, opts ...Option) *Env {
 	g := guard.New(rdb)
 	wallet := &FakeWallet{blocked: map[uuid.UUID]int64{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := service.New(opt, st, g, external.MockPricer{}, wallet, external.RedisMatcher{RDB: rdb}, log).WithClock(clock.Now)
+	pricer := &ScaledPricer{}
+	svc := service.New(opt, st, g, pricer, wallet, external.RedisMatcher{RDB: rdb}, log).WithClock(clock.Now)
 
 	srv := httptest.NewServer(httpapi.New(svc, authn.NewVerifier(pk, issuer, rdb), log).WithInternalTokens([]string{InternalToken}).Handler())
 	t.Cleanup(srv.Close)
-	return &Env{T: t, Pool: pool, Store: st, MR: mr, RDB: rdb, Guard: g, Svc: svc, Clock: clock, Wallet: wallet, Server: srv, Opt: opt}
+	return &Env{T: t, Pool: pool, Store: st, MR: mr, RDB: rdb, Guard: g, Svc: svc, Clock: clock, Wallet: wallet, Pricer: pricer, Server: srv, Opt: opt}
 }
 
 // Token — Identity formatidagi access token.

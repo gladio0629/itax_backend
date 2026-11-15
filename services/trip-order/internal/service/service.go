@@ -403,11 +403,15 @@ func (s *Service) UpdateOrder(ctx context.Context, passenger, id uuid.UUID, in U
 			return domain.Order{}, apperr.Validation(map[string]string{"to": "same_as_from"})
 		}
 
-		q, err := s.price(ctx, o)
-		if err != nil {
-			return domain.Order{}, err
+		// Narx faqat narxga ta'sir qiladigan maydon (tur, o'rindiqlar, sinf, yuk mashinasi, manzil) o'zgarganda qayta
+		// hisoblanadi: izoh/to'lov/vaqt o'zgarishi kelishilgan (quote) narxni o'zgartirmaydi.
+		if priceKey(o) != priceKey(cur) {
+			q, err := s.price(ctx, o)
+			if err != nil {
+				return domain.Order{}, err
+			}
+			o.Price, o.Commission, o.DistanceM, o.DurationS, o.Lines = q.Price, q.Commission, q.DistanceM, q.DurationS, q.Lines
 		}
-		o.Price, o.Commission, o.DistanceM, o.DurationS, o.Lines = q.Price, q.Commission, q.DistanceM, q.DurationS, q.Lines
 		o.SearchExpiresAt = s.searchDeadline(now, scheduleBase(o))
 
 		ok, err := s.st.UpdateSearching(ctx, o, cur.Version, now)
