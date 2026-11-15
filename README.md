@@ -4,6 +4,9 @@ IZGO — yo'lovchi tashish va yetkazib berish (delivery) uchun taksi platformasi
 Go, NestJS va Kotlin servislari Kong API gateway ortida ishlaydi. Ular PostgreSQL, Redis va NATS JetStream orqali
 ma'lumot saqlaydi va hodisa almashadi. Tashqi provayderlar (SMS, Payme/Click, FCM) hozircha **mock**.
 
+Hujjatlar: `api/openapi.yml` (yagona shartnoma), `docs/websocket-events.md` (WS hodisalari),
+`docs/dev-testing.md` (lokal ishga tushirish, test hisoblar, seed), `docs/hosting.md` (HTTPS/WSS, CORS).
+
 ## Ishga tushirish tartibi
 
 Talab: Docker + Docker Compose v2, `openssl`, `curl`, `python3` (smoke test uchun).
@@ -110,7 +113,8 @@ onlyback/
   `car_class_multipliers`, `vehicle_multipliers`, `fuel_surcharge` (+ `min_fare`, `rounding_step`, `commission_bps`). Boshlang'ich qiymatlar —
   `migrations/0002_default_tariff.up.sql` (taklif). Pricing tarifni faqat o'qiydi; yangisini Backoffice yozadi (yangi `version`, `active = true`).
 - Tarif Redis'da 5 daqiqa keshlanadi (`TARIFF_CACHE_TTL`); Redis ishlamasa bazadan o'qiladi. Masofa = Haversine × `ROAD_FACTOR` (1.3), davomiylik = masofa / `AVG_SPEED_KMH` (30).
-- **Hali ulanmagan:** Trip & Order hozir o'zining ichki mock narxidan foydalanadi (formulasi boshqacha — natijalar mos kelmaydi).
+- Trip & Order `PRICING_URL` berilganda (compose'da default) shu servisni chaqiradi; javobdagi `lines` (narx tarkibi, yig'indisi = narx)
+  `POST /api/v1/orders/quote` va buyurtmada qaytadi. `PRICING_URL` bo'sh bo'lsa — ichki mock.
 
 ### Matching & Geo servisi (`services/matching-geo`, faqat Redis)
 
@@ -138,10 +142,10 @@ onlyback/
 
 ### Trip & Order — mock'lar
 
-Pricing, Wallet va Matching hozircha ichki mock (`services/trip-order/internal/external`), real servislarga ulanish
-faqat shu paketdagi implementatsiyani almashtiradi. Manzillar compose'da tayyor (`PRICING_URL`, `MATCHING_URL`,
-`WALLET_URL`, `INTERNAL_TOKENS`), lekin trip-order ularni **hali o'qimaydi**. **Mock matching** takliflarni Redis `matching:mock:drivers`
-to'plamidagi haydovchilarga yaratadi — lokal sinash uchun:
+Pricing, Wallet va Matching: `PRICING_URL`, `MATCHING_URL`, `WALLET_URL` berilsa (compose'da default) real HTTP, bo'sh bo'lsa
+ichki mock (`services/trip-order/internal/external`). Trip & Order backoffice uchun ichki API ham beradi (`/internal/orders`,
+`X-Internal-Token`). **Mock matching** (URL bo'sh bo'lganda) takliflarni Redis `matching:mock:drivers` to'plamidagi
+haydovchilarga yaratadi:
 
 ```bash
 docker compose exec redis redis-cli SADD matching:mock:drivers <haydovchi-user-uuid>   # buyurtma yaratishdan OLDIN

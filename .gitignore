@@ -7,3 +7,4 @@ secrets/
 uploads/
 .claude/settings.local.json
 *.log
+__pycache__/
