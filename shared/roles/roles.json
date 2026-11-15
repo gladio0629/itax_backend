@@ -8,7 +8,9 @@
     "wallet",
     "tariffs",
     "operator",
-    "stats"
+    "stats",
+    "complaints",
+    "audit"
   ],
   "roles": {
     "passenger": {
@@ -34,6 +36,9 @@
     "superadmin": {
       "kind": "staff",
       "permissions": [
+        "audit:read",
+        "complaints:read",
+        "complaints:write",
         "drivers:read",
         "drivers:write",
         "operator:read",
@@ -62,6 +67,9 @@
     "owner": {
       "kind": "staff",
       "permissions": [
+        "audit:read",
+        "complaints:read",
+        "complaints:write",
         "drivers:read",
         "drivers:write",
         "operator:read",
@@ -88,6 +96,8 @@
     "manager": {
       "kind": "staff",
       "permissions": [
+        "complaints:read",
+        "complaints:write",
         "drivers:read",
         "drivers:write",
         "operator:read",
@@ -120,6 +130,8 @@
     "operator": {
       "kind": "staff",
       "permissions": [
+        "complaints:read",
+        "complaints:write",
         "operator:read",
         "operator:write"
       ],

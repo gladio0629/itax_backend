@@ -26,5 +26,7 @@ export const Errors = {
   tariffChangePending: () => new AppError(409, 'TARIFF_CHANGE_PENDING'),
   /** Identity (yoki boshqa ichki servis) javob bermadi / kutilmagan javob berdi */
   identityUnavailable: (reason: string) => new AppError(502, 'IDENTITY_UNAVAILABLE', { reason }),
+  /** Trip & Order ichki API javob bermadi / kutilmagan javob berdi */
+  tripOrderUnavailable: (reason: string) => new AppError(502, 'TRIP_ORDER_UNAVAILABLE', { reason }),
   idempotencyConflict: () => new AppError(409, 'IDEMPOTENCY_KEY_REUSED'),
 };

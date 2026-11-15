@@ -521,15 +521,20 @@ func newOfferResp(v domain.OfferView) offerResp {
 }
 
 type tripResp struct {
-	ID          uuid.UUID  `json:"id"`
-	OrderID     uuid.UUID  `json:"order_id"`
-	DriverID    uuid.UUID  `json:"driver_id"`
-	Status      string     `json:"status"`
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
-	FinalPrice  *int64     `json:"final_price"`
-	Commission  *int64     `json:"commission"`
-	DistanceM   *int       `json:"distance_m"`
+	ID           uuid.UUID  `json:"id"`
+	OrderID      uuid.UUID  `json:"order_id"`
+	DriverID     uuid.UUID  `json:"driver_id"`
+	Status       string     `json:"status"`
+	ArrivedAt    *time.Time `json:"arrived_at"`
+	StartedAt    *time.Time `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at"`
+	CancelledAt  *time.Time `json:"cancelled_at"`
+	CancelledBy  *string    `json:"cancelled_by"`
+	FinalPrice   *int64     `json:"final_price"`
+	Commission   *int64     `json:"commission"`
+	DistanceM    *int       `json:"distance_m"`
+	NextActions  []string   `json:"next_actions"`
+	CancelReason *string    `json:"cancel_reason"`
 }
 
 func utc(t *time.Time) *time.Time {
@@ -542,8 +547,9 @@ func utc(t *time.Time) *time.Time {
 
 func newTripResp(t domain.Trip) tripResp {
 	t.StartedAt, t.CompletedAt = utc(t.StartedAt), utc(t.CompletedAt)
-	return tripResp{ID: t.ID, OrderID: t.OrderID, DriverID: t.DriverID, Status: string(t.Status), StartedAt: t.StartedAt,
-		CompletedAt: t.CompletedAt, FinalPrice: t.FinalPrice, Commission: t.Commission, DistanceM: t.DistanceM}
+	return tripResp{ID: t.ID, OrderID: t.OrderID, DriverID: t.DriverID, Status: string(t.Status), ArrivedAt: utc(t.ArrivedAt),
+		StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, CancelledAt: utc(t.CancelledAt), CancelledBy: t.CancelledBy,
+		FinalPrice: t.FinalPrice, Commission: t.Commission, DistanceM: t.DistanceM, NextActions: t.NextActions(), CancelReason: t.CancelReason}
 }
 
 type ratingResp struct {

@@ -3,12 +3,18 @@ package domain
 import "testing"
 
 func TestOrderTransitions(t *testing.T) {
-	all := []OrderStatus{Searching, Accepted, InProgress, Completed, Cancelled, Expired}
+	all := []OrderStatus{Searching, Accepted, Arrived, InProgress, Completed, Cancelled, Expired}
 	allowed := map[[2]OrderStatus]bool{
 		{Searching, Accepted}:   true,
 		{Searching, Cancelled}:  true,
 		{Searching, Expired}:    true,
+		{Accepted, Arrived}:     true,
 		{Accepted, InProgress}:  true,
+		{Accepted, Searching}:   true, // haydovchi bekor qildi — qayta qidiruv
+		{Accepted, Cancelled}:   true, // admin
+		{Arrived, InProgress}:   true,
+		{Arrived, Searching}:    true,
+		{Arrived, Cancelled}:    true,
 		{InProgress, Completed}: true,
 	}
 	for _, from := range all {
@@ -23,7 +29,7 @@ func TestOrderTransitions(t *testing.T) {
 			t.Errorf("%s terminal bo'lishi kerak", s)
 		}
 	}
-	for _, s := range []OrderStatus{Searching, Accepted, InProgress} {
+	for _, s := range []OrderStatus{Searching, Accepted, Arrived, InProgress} {
 		if s.Terminal() || !s.Active() {
 			t.Errorf("%s faol bo'lishi kerak", s)
 		}
@@ -32,7 +38,7 @@ func TestOrderTransitions(t *testing.T) {
 
 func TestTripTransitions(t *testing.T) {
 	all := []TripStatus{TripAssigned, TripInProgress, TripCompleted, TripCancelled}
-	allowed := map[[2]TripStatus]bool{{TripAssigned, TripInProgress}: true, {TripInProgress, TripCompleted}: true}
+	allowed := map[[2]TripStatus]bool{{TripAssigned, TripInProgress}: true, {TripAssigned, TripCancelled}: true, {TripInProgress, TripCompleted}: true}
 	for _, from := range all {
 		for _, to := range all {
 			if got := from.CanTransitionTo(to); got != allowed[[2]TripStatus{from, to}] {

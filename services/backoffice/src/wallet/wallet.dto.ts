@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength, NotEquals, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength, NotEquals, Max, Min } from 'class-validator';
 import { PageQuery } from '../common/pagination';
 
 const trim = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
@@ -10,6 +10,14 @@ export class LedgerQuery extends PageQuery {
 
   @IsOptional() @IsUUID()
   driver_id?: string;
+}
+
+export const APPROVAL_STATUSES = ['pending_approval', 'approved', 'rejected'] as const;
+
+/** GET /wallet/correction — tuzatishlar ro'yxati (masalan tasdiq kutayotganlar) */
+export class CorrectionListQuery extends PageQuery {
+  @IsOptional() @IsIn(APPROVAL_STATUSES)
+  approval_status?: (typeof APPROVAL_STATUSES)[number];
 }
 
 export class CorrectionCreateDto {

@@ -40,23 +40,39 @@ func TestRoles(t *testing.T) {
 		}
 		return false
 	}
+	// audit — faqat o'qiladigan bo'lim (audit:write hech kimda yo'q); manager audit'ni ko'rmaydi
 	for _, s := range AdminSections {
+		if s == "audit" {
+			continue
+		}
 		if !has(Superadmin, s+":write") {
 			t.Errorf("superadmin %s:write yo'q", s)
 		}
 	}
 	for _, r := range []Role{Owner, Manager} {
 		for _, sec := range AdminSections {
+			if sec == "audit" {
+				continue
+			}
 			if !has(r, sec+":read") || !has(r, sec+":write") {
 				t.Errorf("%s: %s read+write bo'lishi kerak", r, sec)
 			}
 		}
 	}
+	for _, r := range []Role{Superadmin, Owner, Manager, Marketer, Operator} {
+		if has(r, "audit:write") {
+			t.Errorf("%s: audit:write bo'lmasligi kerak", r)
+		}
+	}
+	if !has(Superadmin, "audit:read") || !has(Owner, "audit:read") || has(Manager, "audit:read") || has(Operator, "audit:read") {
+		t.Error("audit:read faqat superadmin va owner da")
+	}
 	if got := Marketer.Permissions(); len(got) != 1 || got[0] != "stats:read" {
 		t.Errorf("marketer faqat stats:read: %v", got)
 	}
-	if got := Operator.Permissions(); len(got) != 2 || got[0] != "operator:read" || got[1] != "operator:write" {
-		t.Errorf("operator faqat operator read+write: %v", got)
+	if got := Operator.Permissions(); len(got) != 4 || got[0] != "complaints:read" || got[1] != "complaints:write" ||
+		got[2] != "operator:read" || got[3] != "operator:write" {
+		t.Errorf("operator faqat complaints va operator read+write: %v", got)
 	}
 	// xodim yaratish huquqi alohida
 	creates := map[Role][]Role{

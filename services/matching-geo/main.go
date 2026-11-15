@@ -88,10 +88,11 @@ func run(log *slog.Logger) error {
 		MaxCandidates: cfg.MaxCandidates, OfferTTL: cfg.OfferTTL,
 	}, log)
 
-	// order.accepted -> haydovchi busy; trip.completed -> available (Trip & Order hodisalari).
+	// order.accepted -> haydovchi busy; trip.completed / trip.cancelled -> available (Trip & Order hodisalari).
 	go nats.Run(ctx,
 		bus.Sub{Subject: events.SubjectOrderAccepted, Durable: "matching-geo-order-accepted", Handle: svc.OnOrderAccepted},
 		bus.Sub{Subject: events.SubjectTripCompleted, Durable: "matching-geo-trip-completed", Handle: svc.OnTripCompleted},
+		bus.Sub{Subject: events.SubjectTripCancelled, Durable: "matching-geo-trip-cancelled", Handle: svc.OnTripCancelled},
 	)
 	go sweepLoop(ctx, svc, log)
 

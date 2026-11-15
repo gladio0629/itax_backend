@@ -144,3 +144,60 @@ func TripCompleted(t domain.Trip, pm domain.PaymentMethod, trace string) (Event,
 		CompletedAt: t.CompletedAt.UTC(), PaymentMethod: string(pm),
 	})
 }
+
+const (
+	SubjectOrderArrived   = "izgo.order.arrived.v1"
+	SubjectTripStarted    = "izgo.trip.started.v1"
+	SubjectTripCancelled  = "izgo.trip.cancelled.v1"
+	SubjectOrderCancelled = "izgo.order.cancelled.v1"
+)
+
+// tripRef — safar holati o'zgarishi hodisalari uchun minimal payload (ism/telefon yo'q).
+type tripRef struct {
+	TripID      uuid.UUID `json:"trip_id"`
+	OrderID     uuid.UUID `json:"order_id"`
+	DriverID    uuid.UUID `json:"driver_id"`
+	PassengerID uuid.UUID `json:"passenger_id"`
+	At          time.Time `json:"at"`
+}
+
+func ref(t domain.Trip, at time.Time) tripRef {
+	return tripRef{TripID: t.ID, OrderID: t.OrderID, DriverID: t.DriverID, PassengerID: t.PassengerID, At: at.UTC()}
+}
+
+// OrderArrived — haydovchi olib ketish joyiga yetib keldi (yo'lovchiga xabar).
+func OrderArrived(t domain.Trip, at time.Time, trace string) (Event, error) {
+	return build("order.arrived", SubjectOrderArrived, at, trace, ref(t, at))
+}
+
+// TripStarted — safar boshlandi (yo'lovchiga xabar).
+func TripStarted(t domain.Trip, at time.Time, trace string) (Event, error) {
+	return build("trip.started", SubjectTripStarted, at, trace, ref(t, at))
+}
+
+type tripCancelled struct {
+	tripRef
+	// CancelledBy — driver (buyurtma qayta searching) | admin (buyurtma cancelled).
+	CancelledBy string `json:"cancelled_by"`
+	OrderStatus string `json:"order_status"`
+}
+
+// TripCancelled — biriktirilgan safar bekor qilindi. Matching haydovchini bo'shatadi; Notification xabar beradi.
+func TripCancelled(t domain.Trip, by string, orderStatus domain.OrderStatus, at time.Time, trace string) (Event, error) {
+	return build("trip.cancelled", SubjectTripCancelled, at, trace, tripCancelled{tripRef: ref(t, at), CancelledBy: by, OrderStatus: string(orderStatus)})
+}
+
+type orderCancelled struct {
+	OrderID     uuid.UUID  `json:"order_id"`
+	PassengerID uuid.UUID  `json:"passenger_id"`
+	DriverID    *uuid.UUID `json:"driver_id"`
+	CancelledBy string     `json:"cancelled_by"`
+	Reason      string     `json:"reason"`
+	At          time.Time  `json:"at"`
+}
+
+// OrderCancelled — buyurtma admin tomonidan bekor qilindi (yo'lovchiga xabar).
+func OrderCancelled(o domain.Order, driver *uuid.UUID, by, reason string, at time.Time, trace string) (Event, error) {
+	return build("order.cancelled", SubjectOrderCancelled, at, trace,
+		orderCancelled{OrderID: o.ID, PassengerID: o.PassengerID, DriverID: driver, CancelledBy: by, Reason: reason, At: at.UTC()})
+}

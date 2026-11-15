@@ -225,5 +225,19 @@ func (s *Service) OnTripCompleted(ctx context.Context, raw []byte) error {
 	return nil
 }
 
+// OnTripCancelled — NATS trip.cancelled: bekor qilingan safar haydovchisi busy -> available (shu safar bo'yicha band bo'lsa).
+func (s *Service) OnTripCancelled(ctx context.Context, raw []byte) error {
+	ref, err := events.ParseTripCancelled(raw)
+	if err != nil {
+		return err
+	}
+	released, err := s.st.MarkTripCompleted(ctx, ref.DriverID, ref.TripID)
+	if err != nil {
+		return err
+	}
+	s.log.InfoContext(ctx, "safar bekor qilindi", "driver_id", ref.DriverID, "trip_id", ref.TripID, "released", released)
+	return nil
+}
+
 // Sweep — joylashuvi muddati o'tgan haydovchilarni geo-to'plamdan tozalaydi.
 func (s *Service) Sweep(ctx context.Context) (int, error) { return s.st.Sweep(ctx) }

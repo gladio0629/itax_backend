@@ -14,6 +14,10 @@ export interface AppConfig {
   identity: { mode: 'http' | 'mock'; baseUrl: string; internalToken: string; timeoutMs: number };
   /** driver / identity ichki GET endpointlari (operator navbatidagi telefon uchun) */
   lookups: { mode: 'http' | 'mock'; driverBaseUrl: string };
+  /** Identity logout qilgan sessiyalar (`bl:sid:<sid>`) shu Redis'da */
+  redis: { url: string; timeoutMs: number };
+  /** Trip & Order ichki API (buyurtmalar va buyurtma statistikasi). mock — testlar va kod defaulti */
+  orders: { mode: 'http' | 'mock'; baseUrl: string };
   /** identity'dagi birinchi superadmin (token'dan avtomatik yaratish uchun ma'lumot) */
   bootstrap: { email: string | null; phone: string | null; name: string };
 }
@@ -28,12 +32,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const pem = env.JWT_PUBLIC_KEY_PEM ?? readFileSync(required(env, 'JWT_PUBLIC_KEY_PATH'), 'utf8');
   const identityMode = (env.IDENTITY_STAFF_MODE ?? 'http') as 'http' | 'mock';
   const lookupMode = (env.INTERNAL_LOOKUP_MODE ?? 'mock') as 'http' | 'mock';
-  if (!['http', 'mock'].includes(identityMode) || !['http', 'mock'].includes(lookupMode)) {
-    throw new Error("IDENTITY_STAFF_MODE / INTERNAL_LOOKUP_MODE qiymati 'http' yoki 'mock' bo'lishi kerak");
+  const ordersMode = (env.ORDERS_MODE ?? 'mock') as 'http' | 'mock';
+  if (![identityMode, lookupMode, ordersMode].every((m) => ['http', 'mock'].includes(m))) {
+    throw new Error("IDENTITY_STAFF_MODE / INTERNAL_LOOKUP_MODE / ORDERS_MODE qiymati 'http' yoki 'mock' bo'lishi kerak");
   }
   // INTERNAL_TOKENS identity bilan bir xil (vergul bilan bir nechta bo'lishi mumkin — yuborishda birinchisi ishlatiladi)
   const internalToken = (env.INTERNAL_TOKENS ?? '').split(',')[0].trim();
-  if ((identityMode === 'http' || lookupMode === 'http') && internalToken.length < 16) {
+  if ((identityMode === 'http' || lookupMode === 'http' || ordersMode === 'http') && internalToken.length < 16) {
     throw new Error("INTERNAL_TOKENS berilishi shart (kamida 16 belgi, identity bilan bir xil)");
   }
   return {
@@ -45,6 +50,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       timeoutMs: Number(env.INTERNAL_HTTP_TIMEOUT_MS ?? 5000),
     },
     lookups: { mode: lookupMode, driverBaseUrl: (env.DRIVER_INTERNAL_URL || 'http://driver:8011').replace(/\/+$/, '') },
+    orders: { mode: ordersMode, baseUrl: (env.TRIP_ORDER_INTERNAL_URL || 'http://trip-order:8012').replace(/\/+$/, '') },
+    redis: { url: env.REDIS_URL || 'redis://redis:6379', timeoutMs: Number(env.REDIS_TIMEOUT_MS ?? 1000) },
     db: {
       host: required(env, 'DB_HOST'),
       port: Number(env.DB_PORT ?? 5432),

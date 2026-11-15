@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Errors } from '../common/errors';
 import { MatchingSync } from '../matching/matching-sync.service';
-import { CarResponseDto, DriverProfileResponseDto, DriverStatusResponseDto, InternalDriverResponseDto } from './dto/response.dto';
+import {
+  CarResponseDto, DriverProfileResponseDto, DriverStatsResponseDto, DriverStatusResponseDto, InternalDriverResponseDto,
+} from './dto/response.dto';
 import { UpdateProfileDto } from './dto/request.dto';
 import type { Car } from './entities/car.entity';
 import type { Driver } from './entities/driver.entity';
-import { DriverStore } from './store/driver.store';
+import { CreatedRange, DriverStore } from './store/driver.store';
 
 export function assertNotBlocked(driver: Driver): void {
   if (driver.state === 'blocked') throw Errors.driverBlocked(driver.stateReason);
@@ -75,6 +77,29 @@ export class DriversService {
     return this.getStatus((await this.store.findById(driver.id)) ?? driver);
   }
 
+  /** Ichki statistika (Backoffice dashboard): holatlar bo'yicha va davrda yaratilganlar. */
+
+  async stats(fromDate?: string, toDate?: string): Promise<DriverStatsResponseDto> {
+    const range: CreatedRange = {};
+    const fields: Record<string, string> = {};
+    if (fromDate !== undefined) {
+      const d = parseUtcDate(fromDate);
+      if (d) range.from = d;
+      else fields.from_date = 'invalid_date';
+    }
+    if (toDate !== undefined) {
+      const d = parseUtcDate(toDate);
+      // to_date kuni ham kiradi: [from 00:00, to+1 00:00)
+      if (d) range.to = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+      else fields.to_date = 'invalid_date';
+    }
+    if (Object.keys(fields).length > 0) throw Errors.validation(fields);
+    if (range.from && range.to && range.from >= range.to) throw Errors.validation({ to_date: 'before_from_date' });
+
+    const s = await this.store.stats(range);
+    return { total: s.total, by_state: s.byState, new_in_range: s.newInRange };
+  }
+
   private toProfile(d: Driver, car: Car | null): DriverProfileResponseDto {
     const out: DriverProfileResponseDto = {
       id: d.id,
@@ -103,4 +128,13 @@ function toCar(c: Car): CarResponseDto {
     car_class: c.carClass,
     seats: c.seats,
   };
+}
+
+/** YYYY-MM-DD → shu kunning 00:00 UTC; noto'g'ri format yoki mavjud bo'lmagan sana (2026-02-31) — null. */
+export function parseUtcDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, day] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, day));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return null;
+  return dt;
 }

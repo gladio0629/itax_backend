@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { Errors } from '../common/errors';
 import { Page, PageQuery, pageArray } from '../common/pagination';
+import { APP_CONFIG, AppConfig } from '../config/configuration';
 import {
-  AccountState, AdminDriverView, AdminPassengerView, DriverLookupPort, DriversPort, IdentityStaff, IdentityStaffPort, UserLookupPort,
-  LedgerEntryView, OrdersPort, OrderView, PassengersPort, PersonCreate, PersonUpdate, StatsPort,
-  StatsView, WalletPort,
+  AccountState, AdminDriverView, AdminPassengerView, CancelReason, DateRange, DriverLookupPort, DriversPort, IdentityStaff,
+  IdentityStaffPort, LedgerEntryView, OrderListFilter, OrderPatch, OrdersPort, OrderStatsView, OrderView, PassengersPort,
+  PersonCreate, PersonUpdate, PlatformStatsView, StatsPort, UserLookupPort, WalletPort,
 } from './ports';
 
 const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const iso = (d: string) => new Date(d).toISOString();
 const byDate = <T extends { created_at: string }>(r: T) => new Date(r.created_at);
+const CITY_TASHKENT = '00000000-0000-4000-8000-000000000601';
+const CITY_SAMARKAND = '00000000-0000-4000-8000-000000000602';
+const CITY_NAMES: Record<string, string> = { [CITY_TASHKENT]: 'Toshkent', [CITY_SAMARKAND]: 'Samarqand' };
 
 /**
  * Mock ma'lumotlar: driver / passenger / trip-order / wallet servislari o'rniga xotirada.
@@ -47,14 +51,18 @@ export class MockData {
         id: uid(300 + n), phone, first_name: first, last_name: 'Aliyeva', state: 'active', state_reason: null,
         rating: 4.9, orders_count: n * 3, created_at: iso(at),
       }));
-    const order = (n: number, status: string, price: number, at: string, drvId: string | null) => this.orders.push({
-      id: uid(400 + n), type: 'passenger', seats: 2,
+    // trip-order Order shakli (public maydonlar + passenger_id, cancel_reason, from_city_id, to_city_id)
+    const order = (n: number, status: string, price: number, at: string, drvId: string | null, toCity = CITY_TASHKENT) => this.orders.push({
+      id: uid(400 + n), type: 'passenger', seats: 2, seat_ids: [], car_class: 'economy', vehicle_type: 'sedan',
       from: { lat: 41.31, lng: 69.24, address: `Chilonzor ${n}` }, to: { lat: 41.33, lng: 69.28, address: `Yunusobod ${n}` },
-      scheduled_at: null, payment_method: 'cash', comment: null, status, price, distance_m: 5000 + n * 100, duration_s: 900,
+      scheduled_at: null, scheduled_from: null, scheduled_to: null, payment_method: 'cash', comment: null, status, price,
+      distance_m: 5000 + n * 100, duration_s: 900,
       driver: drvId ? { id: drvId, first_name: 'Ali', rating: 4.8 } : null, trip_id: null, created_at: iso(at),
+      passenger_id: uid(300 + ((n - 1) % 3) + 1), cancel_reason: status === 'cancelled' ? 'passenger_request' : null,
+      from_city_id: CITY_TASHKENT, to_city_id: toCity,
     });
     order(1, 'completed', 2_500_000, '2026-11-01T08:00:00Z', uid(101));
-    order(2, 'completed', 1_800_000, '2026-11-05T09:00:00Z', uid(102));
+    order(2, 'completed', 1_800_000, '2026-11-05T09:00:00Z', uid(102), CITY_SAMARKAND);
     order(3, 'cancelled', 1_200_000, '2026-11-08T10:00:00Z', null);
     order(4, 'in_progress', 3_000_000, '2026-11-11T11:00:00Z', uid(101));
     order(5, 'searching', 2_200_000, '2026-11-12T01:00:00Z', null);
@@ -143,19 +151,91 @@ export class MockPassengersPort extends PassengersPort {
   }
 }
 
+/** trip-order bilan bir xil qoida (taxminiy): yakunlangan buyurtma va boshlangan safar o'zgarmaydi */
+function lockedReason(status: string): string | null {
+  if (status === 'in_progress') return 'trip_started';
+  if (['completed', 'cancelled', 'expired'].includes(status)) return 'order_closed';
+  return null;
+}
+
 @Injectable()
 export class MockOrdersPort extends OrdersPort {
-  constructor(private readonly d: MockData) { super(); }
-  async list(f: { status?: string; from?: Date; to?: Date; q?: string }, page: PageQuery): Promise<Page<OrderView>> {
+  constructor(private readonly d: MockData, @Inject(APP_CONFIG) private readonly cfg: AppConfig) { super(); }
+
+  async list(f: OrderListFilter, page: PageQuery): Promise<Page<OrderView>> {
     const rows = this.d.orders.filter((o) => {
       const t = new Date(o.created_at).getTime();
       const addr = `${(o.from as { address: string }).address} ${(o.to as { address: string }).address}`;
       return (!f.status || o.status === f.status) && (!f.from || t >= f.from.getTime()) && (!f.to || t < f.to.getTime())
+        && (!f.passengerId || o.passenger_id === f.passengerId)
         && (!f.q || o.id.startsWith(f.q.toLowerCase()) || addr.toLowerCase().includes(f.q.toLowerCase()));
     });
     return pageArray(rows, byDate, page);
   }
+
   async get(id: string) { return this.d.orders.find((o) => o.id === id) ?? null; }
+
+  async update(id: string, patch: OrderPatch): Promise<OrderView | null> {
+    const i = this.d.orders.findIndex((o) => o.id === id);
+    if (i < 0) return null;
+    const reason = lockedReason(this.d.orders[i].status);
+    if (reason) throw Errors.forbidden(reason);
+    const next: OrderView = { ...this.d.orders[i], ...patch };
+    // aniq vaqt va oraliq bir-birini istisno qiladi
+    if (patch.scheduled_at !== undefined) { next.scheduled_from = null; next.scheduled_to = null; }
+    if (patch.scheduled_from !== undefined) next.scheduled_at = null;
+    this.d.orders[i] = next;
+    return next;
+  }
+
+  async cancel(id: string, c: { reason: CancelReason; comment?: string }): Promise<OrderView | null> {
+    const i = this.d.orders.findIndex((o) => o.id === id);
+    if (i < 0) return null;
+    const reason = lockedReason(this.d.orders[i].status);
+    if (reason) throw Errors.forbidden(reason);
+    const next: OrderView = { ...this.d.orders[i], status: 'cancelled', cancel_reason: c.reason };
+    this.d.orders[i] = next;
+    return next;
+  }
+
+  async stats(range: DateRange): Promise<OrderStatsView> {
+    const inR = (s: string) => {
+      const t = new Date(s).getTime();
+      return (!range.from || t >= range.from.getTime()) && (!range.to || t < range.to.getTime());
+    };
+    const orders = this.d.orders.filter((o) => inR(o.created_at));
+    const done = orders.filter((o) => o.status === 'completed');
+    const revenue = done.reduce((s, o) => s + (o.price as number), 0);
+    const byStatus: Record<string, number> = {};
+    const daily = new Map<string, { date: string; orders: number; completed: number; revenue: number }>();
+    const routes = new Map<string, OrderStatsView['top_routes'][number]>();
+    for (const o of orders) {
+      byStatus[o.status] = (byStatus[o.status] ?? 0) + 1;
+      // kun — Toshkent vaqti bo'yicha
+      const date = new Date(new Date(o.created_at).getTime() + this.cfg.tzOffsetHours * 3600_000).toISOString().slice(0, 10);
+      const dd = daily.get(date) ?? { date, orders: 0, completed: 0, revenue: 0 };
+      dd.orders++;
+      if (o.status === 'completed') { dd.completed++; dd.revenue += o.price as number; }
+      daily.set(date, dd);
+      const from = o.from_city_id as string, to = o.to_city_id as string;
+      const rk = `${from}:${to}`;
+      const rt = routes.get(rk) ?? { from_city_id: from, to_city_id: to, from_name: CITY_NAMES[from] ?? null, to_name: CITY_NAMES[to] ?? null, orders: 0 };
+      rt.orders++;
+      routes.set(rk, rt);
+    }
+    return {
+      orders_total: orders.length,
+      orders_completed: done.length,
+      orders_cancelled: byStatus.cancelled ?? 0,
+      orders_expired: byStatus.expired ?? 0,
+      orders_by_status: byStatus,
+      revenue,
+      commission: Math.floor((revenue * 15) / 100),
+      average_order_value: done.length ? Math.floor(revenue / done.length) : 0,
+      daily: [...daily.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+      top_routes: [...routes.values()].sort((a, b) => b.orders - a.orders).slice(0, 10),
+    };
+  }
 }
 
 @Injectable()
@@ -177,26 +257,19 @@ export class MockWalletPort extends WalletPort {
   }
 }
 
+/** Haydovchi/yo'lovchi ko'rsatkichlari — HOZIR MOCK (ORDERS_MODE=http da ham). Buyurtma raqamlari — OrdersPort.stats. */
 @Injectable()
 export class MockStatsPort extends StatsPort {
   constructor(private readonly d: MockData) { super(); }
-  async stats(range: { from?: Date; to?: Date }): Promise<StatsView> {
+  async stats(range: DateRange): Promise<PlatformStatsView> {
     const inR = (s: string) => {
       const t = new Date(s).getTime();
       return (!range.from || t >= range.from.getTime()) && (!range.to || t < range.to.getTime());
     };
-    const orders = this.d.orders.filter((o) => inR(o.created_at));
-    const done = orders.filter((o) => o.status === 'completed');
-    const revenue = done.reduce((s, o) => s + (o.price as number), 0);
     return {
-      orders_total: orders.length,
-      orders_completed: done.length,
-      orders_cancelled: orders.filter((o) => o.status === 'cancelled').length,
       active_drivers: [...this.d.drivers.values()].filter((x) => x.state === 'active').length,
       online_drivers: 1,
       new_passengers: [...this.d.passengers.values()].filter((p) => inR(p.created_at)).length,
-      revenue,
-      commission: Math.floor((revenue * 15) / 100),
       drivers_over_limit: [...this.d.wallets.values()].filter((b) => b <= -400_000).length,
     };
   }

@@ -3,10 +3,27 @@ import type { Car } from '../entities/car.entity';
 import type { DriverDocument } from '../entities/document.entity';
 import type { RegistrationStep } from '../entities/registration-step.entity';
 import type { OutboxEvent } from '../entities/outbox.entity';
+import type { DriverRoute } from '../entities/route.entity';
+import type { DriverCapabilities } from '../entities/capabilities.entity';
 
 export type DriverProfilePatch = Partial<
   Pick<Driver, 'firstName' | 'lastName' | 'birthDate' | 'city' | 'avatarDocumentId'>
 >;
+
+export type RouteInput = Pick<DriverRoute, 'aCityId' | 'bCityId' | 'bothWays'>;
+export type CapabilitiesInput = Omit<DriverCapabilities, 'driverId' | 'updatedAt'>;
+
+/** created_at oralig'i: [from, to) — ikkalasi ham ixtiyoriy */
+export interface CreatedRange {
+  from?: Date;
+  to?: Date;
+}
+
+export interface DriverStats {
+  total: number;
+  byState: Record<DriverState, number>;
+  newInRange: number;
+}
 
 export interface TransitionInput {
   id: string;
@@ -44,6 +61,18 @@ export abstract class DriverStore {
   /** Shartli holat o'tkazish: faqat joriy holat `from` ichida bo'lsagina. true — o'tkazildi. */
   abstract transition(input: TransitionInput): Promise<boolean>;
   abstract listByState(state: DriverState): Promise<Driver[]>;
+
+  /** Yaratilish (massiv) tartibida */
+  abstract getRoutes(driverId: string): Promise<DriverRoute[]>;
+  /** Butun to'plamni atomik almashtiradi (parallel PUT lar aralashmaydi) va yangi ro'yxatni qaytaradi. */
+  abstract replaceRoutes(driverId: string, routes: RouteInput[]): Promise<DriverRoute[]>;
+
+  /** null — hali saqlanmagan (standart qiymatlar) */
+  abstract getCapabilities(driverId: string): Promise<DriverCapabilities | null>;
+  abstract upsertCapabilities(driverId: string, caps: CapabilitiesInput): Promise<DriverCapabilities>;
+
+  /** Holatlar bo'yicha soni (barcha holatlar, 0 bilan) + `range` ichida yaratilganlar soni. */
+  abstract stats(range: CreatedRange): Promise<DriverStats>;
 
   abstract takeUnpublishedOutbox(limit: number): Promise<OutboxEvent[]>;
   abstract markOutboxPublished(id: string): Promise<void>;

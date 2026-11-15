@@ -44,6 +44,9 @@ import (
 
 const issuer = "izgo-identity-test"
 
+// InternalToken — testlarda /internal/* uchun X-Internal-Token.
+const InternalToken = "test-internal-token-0123456789"
+
 var (
 	pgOnce   sync.Once
 	pgAdmin  string // admin DSN (bazasiz qism)
@@ -207,7 +210,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.New(opt, st, g, external.MockPricer{}, wallet, external.RedisMatcher{RDB: rdb}, log).WithClock(clock.Now)
 
-	srv := httptest.NewServer(httpapi.New(svc, authn.NewVerifier(pk, issuer, rdb), log).Handler())
+	srv := httptest.NewServer(httpapi.New(svc, authn.NewVerifier(pk, issuer, rdb), log).WithInternalTokens([]string{InternalToken}).Handler())
 	t.Cleanup(srv.Close)
 	return &Env{T: t, Pool: pool, Store: st, MR: mr, RDB: rdb, Guard: g, Svc: svc, Clock: clock, Wallet: wallet, Server: srv, Opt: opt}
 }

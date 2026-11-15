@@ -1,10 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
+import { DriverCapabilities } from '../../src/drivers/entities/capabilities.entity';
 import { Car } from '../../src/drivers/entities/car.entity';
 import { DriverDocument } from '../../src/drivers/entities/document.entity';
-import { Driver, DriverState } from '../../src/drivers/entities/driver.entity';
+import { Driver, DRIVER_STATES, DriverState } from '../../src/drivers/entities/driver.entity';
 import { OutboxEvent } from '../../src/drivers/entities/outbox.entity';
 import { RegistrationStep } from '../../src/drivers/entities/registration-step.entity';
-import { DriverProfilePatch, DriverStore, TransitionInput } from '../../src/drivers/store/driver.store';
+import { DriverRoute } from '../../src/drivers/entities/route.entity';
+import {
+  CapabilitiesInput, CreatedRange, DriverProfilePatch, DriverStore, RouteInput, TransitionInput,
+} from '../../src/drivers/store/driver.store';
 
 /** Testlar uchun: Postgres siz ishlaydi, DriverStore shartnomasini (shartli o'tish, outbox) takrorlaydi. */
 export class InMemoryDriverStore extends DriverStore {
@@ -13,6 +17,8 @@ export class InMemoryDriverStore extends DriverStore {
   cars = new Map<string, Car>();
   docs = new Map<string, DriverDocument>();
   outbox: OutboxEvent[] = [];
+  routes: DriverRoute[] = [];
+  capabilities = new Map<string, DriverCapabilities>();
 
   async findById(id: string) { return this.drivers.get(id) ?? null; }
   async findByUserId(userId: string) { return [...this.drivers.values()].find((d) => d.userId === userId) ?? null; }
@@ -74,6 +80,33 @@ export class InMemoryDriverStore extends DriverStore {
     return true;
   }
   async listByState(state: DriverState) { return [...this.drivers.values()].filter((d) => d.state === state); }
+
+  async getRoutes(driverId: string) {
+    return this.routes.filter((r) => r.driverId === driverId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.position - b.position);
+  }
+  async replaceRoutes(driverId: string, routes: RouteInput[]) {
+    const now = new Date();
+    const rows = routes.map((r, i) => Object.assign(new DriverRoute(), { id: uuidv4(), driverId, ...r, position: i, createdAt: now }));
+    this.routes = [...this.routes.filter((r) => r.driverId !== driverId), ...rows];
+    return rows;
+  }
+
+  async getCapabilities(driverId: string) { return this.capabilities.get(driverId) ?? null; }
+  async upsertCapabilities(driverId: string, caps: CapabilitiesInput) {
+    const c = Object.assign(new DriverCapabilities(), { driverId, ...caps, childSeatAges: [...caps.childSeatAges], updatedAt: new Date() });
+    this.capabilities.set(driverId, c);
+    return c;
+  }
+
+  async stats(range: CreatedRange) {
+    const all = [...this.drivers.values()];
+    const byState = Object.fromEntries(DRIVER_STATES.map((st) => [st, 0])) as Record<DriverState, number>;
+    for (const d of all) byState[d.state] += 1;
+    const inRange = (d: Driver) =>
+      (!range.from || d.createdAt >= range.from) && (!range.to || d.createdAt < range.to);
+    return { total: all.length, byState, newInRange: all.filter(inRange).length };
+  }
 
   async takeUnpublishedOutbox(limit: number) { return this.outbox.filter((o) => !o.publishedAt).slice(0, limit); }
   async markOutboxPublished(id: string) { const o = this.outbox.find((x) => x.id === id); if (o) o.publishedAt = new Date(); }

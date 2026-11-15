@@ -230,7 +230,8 @@ services:
       PRICING_URL: ${PRICING_URL:-http://pricing:8014}
       MATCHING_URL: ${MATCHING_URL:-http://matching-geo:8013}
       WALLET_URL: ${WALLET_URL:-http://wallet:8015}
-      # /internal/* chaqiruvlari uchun X-Internal-Token (pricing/matching-geo/wallet bilan bir xil)
+      # /internal/* chaqiruvlari uchun X-Internal-Token (pricing/matching-geo/wallet bilan bir xil); kiruvchi
+      # /internal/orders (backoffice) ham shu ro'yxat bilan tekshiriladi
       INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
@@ -331,6 +332,9 @@ services:
       # GET /internal/driver/drivers/{id} (haydovchi). Ikkalasi ham tayyor; test/offline uchun INTERNAL_LOOKUP_MODE=mock
       INTERNAL_LOOKUP_MODE: ${INTERNAL_LOOKUP_MODE:-http}
       DRIVER_INTERNAL_URL: ${DRIVER_INTERNAL_URL:-http://driver:8011}
+      # Buyurtmalar va buyurtma statistikasi — Trip & Order ichki API (GET/PATCH /internal/orders, .../cancel, /stats)
+      ORDERS_MODE: ${ORDERS_MODE:-http}
+      TRIP_ORDER_INTERNAL_URL: ${TRIP_ORDER_INTERNAL_URL:-http://trip-order:8012}
       TZ_OFFSET_HOURS: ${TZ_OFFSET_HOURS:-5}
       # Operator "resolved" qilgan haydovchi arizasi uchun driver.approved chiqariladi
       PUBLISH_APPROVED_ON_RESOLVED: ${PUBLISH_APPROVED_ON_RESOLVED:-true}

@@ -109,7 +109,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
-		Handler:           httpapi.New(svc, authn.NewVerifier(pub, cfg.JWTIssuer, rdb), log).Handler(),
+		Handler:           httpapi.New(svc, authn.NewVerifier(pub, cfg.JWTIssuer, rdb), log).WithInternalTokens(cfg.InternalTokenList()).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

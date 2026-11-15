@@ -30,6 +30,13 @@ func TestParseRecipientsAndMinimalContent(t *testing.T) {
 		{"trip.completed -> yo'lovchi", ev("trip.completed", map[string]any{"trip_id": s(tr), "order_id": s(o), "driver_id": s(d), "passenger_id": s(p), "final_price": 5}), p, uuid.Nil, tr, "completed"},
 		{"wallet.limit_reached -> haydovchi", ev("wallet.limit_reached", map[string]any{"wallet_id": s(w), "driver_id": s(d), "balance": -1}), d, uuid.Nil, w, ""},
 		{"driver.approved -> haydovchi", ev("driver.approved", map[string]any{"driver_id": s(d), "approved_by": s(p)}), d, uuid.Nil, d, ""},
+		{"order.arrived -> yo'lovchi", ev("order.arrived", map[string]any{"order_id": s(o), "trip_id": s(tr), "driver_id": s(d), "passenger_id": s(p)}), p, uuid.Nil, o, "arrived"},
+		{"trip.started -> yo'lovchi", ev("trip.started", map[string]any{"order_id": s(o), "trip_id": s(tr), "driver_id": s(d), "passenger_id": s(p)}), p, uuid.Nil, tr, "in_progress"},
+		{"trip.cancelled (driver) -> yo'lovchi", ev("trip.cancelled", map[string]any{"order_id": s(o), "trip_id": s(tr), "driver_id": s(d), "passenger_id": s(p),
+			"cancelled_by": "driver", "order_status": "searching"}), p, uuid.Nil, tr, "searching"},
+		{"trip.cancelled (admin) -> haydovchi", ev("trip.cancelled", map[string]any{"order_id": s(o), "trip_id": s(tr), "driver_id": s(d), "passenger_id": s(p),
+			"cancelled_by": "admin", "order_status": "cancelled"}), d, uuid.Nil, tr, "cancelled"},
+		{"order.cancelled -> yo'lovchi", ev("order.cancelled", map[string]any{"order_id": s(o), "passenger_id": s(p), "driver_id": nil, "cancelled_by": "admin", "reason": "fraud"}), p, uuid.Nil, o, "cancelled"},
 	}
 	for _, c := range cases {
 		n, err := Parse(c.raw)
@@ -68,6 +75,10 @@ func TestParsePoison(t *testing.T) {
 		"payload yo'q":        []byte(`{"event":"order.created","version":1,"event_id":"` + id + `"}`),
 		"passenger_id yo'q":   ev("order.created", map[string]any{"order_id": id}),
 		"driver_id noto'g'ri": ev("wallet.limit_reached", map[string]any{"wallet_id": id, "driver_id": "x"}),
+		"trip.cancelled by?": ev("trip.cancelled", map[string]any{"order_id": id, "trip_id": id, "driver_id": id, "passenger_id": id,
+			"cancelled_by": "system", "order_status": "searching"}),
+		"trip.cancelled status?": ev("trip.cancelled", map[string]any{"order_id": id, "trip_id": id, "driver_id": id, "passenger_id": id,
+			"cancelled_by": "driver", "order_status": "completed"}),
 	}
 	for name, raw := range bad {
 		if _, err := Parse(raw); !errors.Is(err, ErrPoison) {

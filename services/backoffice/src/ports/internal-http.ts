@@ -1,4 +1,4 @@
-import { Errors } from '../common/errors';
+import { AppError, Errors } from '../common/errors';
 
 /** Ichki servislarga (X-Internal-Token bilan) HTTP chaqiruv. Timeout bor, qayta urinish yo'q. */
 export class InternalHttpClient {
@@ -7,10 +7,12 @@ export class InternalHttpClient {
     private readonly token: string,
     private readonly timeoutMs: number,
     private readonly fetchImpl: typeof fetch = fetch,
+    /** tarmoq xatosi/timeout uchun xato (default — IDENTITY_UNAVAILABLE; trip-order uchun TRIP_ORDER_UNAVAILABLE) */
+    private readonly unavailable: (reason: string) => AppError = Errors.identityUnavailable,
   ) {}
 
-  /** Tarmoq xatosi yoki timeout — `IDENTITY_UNAVAILABLE` (502). HTTP status ni chaqiruvchi hal qiladi. */
-  async request(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<{ status: number; json: any }> {
+  /** Tarmoq xatosi yoki timeout — `unavailable` (502). HTTP status ni chaqiruvchi hal qiladi. */
+  async request(method: 'GET' | 'POST' | 'PUT' | 'PATCH', path: string, body?: unknown): Promise<{ status: number; json: any }> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), this.timeoutMs);
     try {
@@ -29,7 +31,7 @@ export class InternalHttpClient {
       return { status: res.status, json };
     } catch (e) {
       const timedOut = (e as Error).name === 'AbortError';
-      throw Errors.identityUnavailable(timedOut ? 'timeout' : 'unreachable');
+      throw this.unavailable(timedOut ? 'timeout' : 'unreachable');
     } finally {
       clearTimeout(timer);
     }

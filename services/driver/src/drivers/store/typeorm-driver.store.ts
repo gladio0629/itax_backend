@@ -2,12 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In, IsNull } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
+import { DriverCapabilities } from '../entities/capabilities.entity';
 import { Car } from '../entities/car.entity';
 import { DriverDocument } from '../entities/document.entity';
-import { Driver, DriverState } from '../entities/driver.entity';
+import { Driver, DRIVER_STATES, DriverState } from '../entities/driver.entity';
 import { OutboxEvent } from '../entities/outbox.entity';
 import { RegistrationStep } from '../entities/registration-step.entity';
-import { DriverProfilePatch, DriverStore, TransitionInput } from './driver.store';
+import { DriverRoute } from '../entities/route.entity';
+import {
+  CapabilitiesInput, CreatedRange, DriverProfilePatch, DriverStats, DriverStore, RouteInput, TransitionInput,
+} from './driver.store';
 
 @Injectable()
 export class TypeOrmDriverStore extends DriverStore {
@@ -114,6 +118,58 @@ export class TypeOrmDriverStore extends DriverStore {
 
   listByState(state: DriverState): Promise<Driver[]> {
     return this.ds.getRepository(Driver).find({ where: { state } });
+  }
+
+  getRoutes(driverId: string): Promise<DriverRoute[]> {
+    return this.ds.getRepository(DriverRoute).find({ where: { driverId }, order: { createdAt: 'ASC', position: 'ASC' } });
+  }
+
+  async replaceRoutes(driverId: string, routes: RouteInput[]): Promise<DriverRoute[]> {
+    return this.ds.transaction(async (em) => {
+      // Haydovchi qatorini qulflaymiz: parallel PUT lar ketma-ket bajariladi (aks holda ikkala to'plam birlashib qolishi mumkin)
+      await em.query('SELECT 1 FROM drivers WHERE id = $1 FOR UPDATE', [driverId]);
+      const repo = em.getRepository(DriverRoute);
+      await repo.delete({ driverId });
+      const now = new Date();
+      const rows = routes.map((r, i) =>
+        repo.create({ id: uuidv4(), driverId, ...r, position: i, createdAt: now }),
+      );
+      if (rows.length > 0) await repo.insert(rows);
+      return rows;
+    });
+  }
+
+  getCapabilities(driverId: string): Promise<DriverCapabilities | null> {
+    return this.ds.getRepository(DriverCapabilities).findOne({ where: { driverId } });
+  }
+
+  async upsertCapabilities(driverId: string, caps: CapabilitiesInput): Promise<DriverCapabilities> {
+    const repo = this.ds.getRepository(DriverCapabilities);
+    await repo.upsert({ driverId, ...caps, updatedAt: new Date() }, ['driverId']);
+    return (await this.getCapabilities(driverId)) as DriverCapabilities;
+  }
+
+  async stats(range: CreatedRange): Promise<DriverStats> {
+    // Bitta so'rov: holat bo'yicha guruhlash + oraliqdagi yangilar (FILTER). pg count ni satr qaytaradi.
+    const rows: { state: DriverState; n: string; n_new: string }[] = await this.ds.query(
+      `SELECT state,
+              count(*) AS n,
+              count(*) FILTER (WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+                                 AND ($2::timestamptz IS NULL OR created_at <  $2::timestamptz)) AS n_new
+         FROM drivers
+        GROUP BY state`,
+      [range.from ?? null, range.to ?? null],
+    );
+    const byState = Object.fromEntries(DRIVER_STATES.map((st) => [st, 0])) as Record<DriverState, number>;
+    let total = 0;
+    let newInRange = 0;
+    for (const r of rows) {
+      const n = Number(r.n);
+      if (r.state in byState) byState[r.state] = n;
+      total += n;
+      newInRange += Number(r.n_new);
+    }
+    return { total, byState, newInRange };
   }
 
   takeUnpublishedOutbox(limit: number): Promise<OutboxEvent[]> {

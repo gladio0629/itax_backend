@@ -2,8 +2,10 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   Equals,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -16,6 +18,8 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsUuidFormat } from '../../common/validation';
+import { CHILD_SEAT_AGES, ChildSeatAge } from '../entities/capabilities.entity';
 
 const trim = () => Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 
@@ -120,4 +124,59 @@ export class UploadUrlRequestDto {
 
   @IsInt() @Min(1) @Max(MAX_UPLOAD_BYTES)
   size_bytes!: number;
+}
+
+// ------------------------------------------------------- yo'nalishlarim
+
+export const MAX_ROUTES = 10;
+
+/**
+ * Shahar ID lari Trip & Order katalogidan (GET /api/v1/cities). Driver servisi katalogga ulanmaydi —
+ * faqat UUID formati tekshiriladi, shahar mavjudligi tekshirilmaydi.
+ */
+export class RouteInputDto {
+  @IsUuidFormat()
+  a_city_id!: string;
+
+  @IsUuidFormat()
+  b_city_id!: string;
+
+  @IsBoolean()
+  both_ways!: boolean;
+}
+
+/** PUT /me/routes: butun to'plam almashtiriladi (0..10 ta). Takror/bir xil shahar — servisda tekshiriladi. */
+export class ReplaceRoutesDto {
+  // Dekoratorlar teskari tartibda qo'llanadi: birinchi xato kaliti eng pastdagisidan (massiv emas → isArray)
+  @ValidateNested({ each: true }) @Type(() => RouteInputDto)
+  @ArrayMaxSize(MAX_ROUTES) @IsArray()
+  routes!: RouteInputDto[];
+}
+
+// ------------------------------------------------------ imkoniyatlarim
+
+/** PUT /me/capabilities: to'rt maydon ham majburiy. child_seat=false da yoshlar bo'sh — servisda tekshiriladi. */
+export class CapabilitiesDto {
+  @IsBoolean()
+  child_seat!: boolean;
+
+  @IsIn(CHILD_SEAT_AGES, { each: true }) @ArrayUnique() @ArrayMaxSize(CHILD_SEAT_AGES.length) @IsArray()
+  child_seat_ages!: ChildSeatAge[];
+
+  @IsBoolean()
+  pets!: boolean;
+
+  @IsBoolean()
+  big_luggage!: boolean;
+}
+
+// ------------------------------------------------------ ichki statistika
+
+/** GET /internal/driver/stats so'rov parametrlari (YYYY-MM-DD, UTC). Format va sananing haqiqiyligi servisda (`invalid_date`). */
+export class DriverStatsQueryDto {
+  @IsOptional() @IsString()
+  from_date?: string;
+
+  @IsOptional() @IsString()
+  to_date?: string;
 }

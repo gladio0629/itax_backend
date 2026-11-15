@@ -15,6 +15,8 @@ const (
 	SubjectOfferCreated  = "izgo.offer.created.v1"
 	SubjectOrderAccepted = "izgo.order.accepted.v1"
 	SubjectTripCompleted = "izgo.trip.completed.v1"
+	// SubjectTripCancelled — biriktirilgan safar bekor qilindi (haydovchi yoki admin): haydovchi yana bo'sh.
+	SubjectTripCancelled = "izgo.trip.cancelled.v1"
 )
 
 // ErrPoison — hodisa buzuq (qayta urinish foyda bermaydi): iste'molchi uni tashlab yuboradi.
@@ -81,3 +83,4 @@ func parse(raw []byte, wantEvent string) (TripRef, error) {
 
 func ParseOrderAccepted(raw []byte) (TripRef, error) { return parse(raw, "order.accepted") }
 func ParseTripCompleted(raw []byte) (TripRef, error) { return parse(raw, "trip.completed") }
+func ParseTripCancelled(raw []byte) (TripRef, error) { return parse(raw, "trip.cancelled") }

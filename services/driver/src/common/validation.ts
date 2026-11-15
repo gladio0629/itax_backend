@@ -1,7 +1,8 @@
 import { ValidationError, ValidationPipe } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
+import { validate, ValidateBy, ValidationOptions } from 'class-validator';
 import { Errors } from './errors';
+import { UUID_RE } from './pipes';
 
 /** class-validator xatolarini {maydon: xato_kaliti} xaritasiga aylantiradi (ichma-ich maydonlar "car.brand"). */
 export function flattenErrors(errors: ValidationError[], prefix = ''): Record<string, string> {
@@ -40,4 +41,15 @@ export async function validateDto<T extends object>(cls: new () => T, body: unkn
   const errors = await validate(inst, VALIDATION_OPTIONS);
   if (errors.length > 0) throw Errors.validation(flattenErrors(errors));
   return inst;
+}
+
+/**
+ * UUID formati (8-4-4-4-12 hex). Xato kaliti — `invalid_format`.
+ * class-validator dagi @IsUUID versiya/variantni ham talab qiladi va 00000000-...-0001 kabi ID larni rad etadi.
+ */
+export function IsUuidFormat(opts?: ValidationOptions): PropertyDecorator {
+  return ValidateBy({
+    name: 'invalid_format',
+    validator: { validate: (v: unknown) => typeof v === 'string' && UUID_RE.test(v) },
+  }, opts);
 }

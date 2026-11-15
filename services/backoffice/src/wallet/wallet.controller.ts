@@ -4,8 +4,8 @@ import { CurrentActor, Perm } from '../auth/admin.guard';
 import type { Page } from '../common/pagination';
 import { UuidParamPipe } from '../common/pipes';
 import { LedgerEntryView, WalletPort } from '../ports/ports';
-import { ApprovalRejectDto, CorrectionCreateDto, LedgerQuery } from './wallet.dto';
-import { CorrectionView, WalletService } from './wallet.service';
+import { ApprovalRejectDto, CorrectionCreateDto, CorrectionListQuery, LedgerQuery } from './wallet.dto';
+import { CorrectionListItem, CorrectionView, WalletService } from './wallet.service';
 
 @Controller('admin/v1/wallet')
 export class WalletController {
@@ -14,6 +14,11 @@ export class WalletController {
   @Get('ledger') @Perm('wallet:read')
   ledger(@Query() q: LedgerQuery): Promise<Page<LedgerEntryView>> {
     return this.wallet.ledger({ walletId: q.wallet_id, driverId: q.driver_id }, q);
+  }
+
+  @Get('correction') @Perm('wallet:read')
+  corrections(@Query() q: CorrectionListQuery): Promise<Page<CorrectionListItem>> {
+    return this.svc.list(q);
   }
 
   @Post('correction') @Perm('wallet:write') @HttpCode(202)

@@ -23,10 +23,18 @@ type Server struct {
 	svc *service.Service
 	ver *authn.Verifier
 	log *slog.Logger
+	// internalTokens — /internal/* uchun X-Internal-Token qiymatlari (INTERNAL_TOKENS); bo'sh bo'lsa ichki API yopiq.
+	internalTokens []string
 }
 
 func New(svc *service.Service, ver *authn.Verifier, log *slog.Logger) *Server {
 	return &Server{svc: svc, ver: ver, log: log}
+}
+
+// WithInternalTokens — ichki API (backoffice) uchun ruxsat etilgan tokenlar.
+func (s *Server) WithInternalTokens(tokens []string) *Server {
+	s.internalTokens = tokens
+	return s
 }
 
 type ctxKey int
@@ -105,6 +113,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/trips/offers/{id}/accept", s.authed(D, s.acceptOffer))
 	mux.HandleFunc("POST /api/v1/trips/{id}/start", s.authed(D, s.startTrip))
 	mux.HandleFunc("POST /api/v1/trips/{id}/complete", s.authed(D, s.completeTrip))
+	mux.HandleFunc("POST /api/v1/trips/offers/{id}/reject", s.authed(D, s.rejectOffer))
+	mux.HandleFunc("POST /api/v1/trips/{id}/arrive", s.authed(D, s.arriveTrip))
+	mux.HandleFunc("POST /api/v1/trips/{id}/cancel", s.authed(D, s.cancelTrip))
+	mux.HandleFunc("GET /api/v1/trips", s.authed(D, s.tripsList))
+	mux.HandleFunc("GET /api/v1/trips/history", s.authed(D, s.tripsHistory))
+
+	// Ichki API (faqat Docker tarmog'i; Kong'da YO'Q) — backoffice admin amallari.
+	mux.HandleFunc("GET /internal/orders", s.internal(s.intOrders))
+	mux.HandleFunc("GET /internal/orders/stats", s.internal(s.intStats))
+	mux.HandleFunc("GET /internal/orders/{id}", s.internal(s.intOrder))
+	mux.HandleFunc("PATCH /internal/orders/{id}", s.internal(s.intUpdate))
+	mux.HandleFunc("POST /internal/orders/{id}/cancel", s.internal(s.intCancel))
 
 	mux.HandleFunc("/", s.handle(func(http.ResponseWriter, *http.Request) error { return apperr.NotFound() }))
 	return s.recoverer(s.withRequestID(s.accessLog(mux)))
@@ -296,7 +316,7 @@ func (s *Server) startTrip(w http.ResponseWriter, r *http.Request, id *authn.Ide
 	if err != nil {
 		return err
 	}
-	t, err := s.svc.StartTrip(r.Context(), id.UserID, tid)
+	t, err := s.svc.StartTrip(r.Context(), id.UserID, tid, requestID(r.Context()))
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { RedisSessionRevocationPort } from '../src/auth/session-revocation';
 import { Staff } from '../src/entities/staff.entity';
 import { createHarness, Harness, makeToken } from './support/harness';
 
@@ -31,7 +32,7 @@ describe('token va ruxsat tekshiruvi', () => {
     expect(me.body.creatable_roles).toEqual(['marketer', 'operator']);
     expect(me.body.permissions).toContain('staff:write');
     const op = await h.as('op1').get('/admin/v1/me');
-    expect(op.body).toMatchObject({ role: 'operator', sections: ['operator'], creatable_roles: [] });
+    expect(op.body).toMatchObject({ role: 'operator', sections: ['operator', 'complaints'], creatable_roles: [] });
   });
 
   it('ruxsat matritsasi: marketolog faqat stats, operator faqat operator, yuqori rollar hammasi', async () => {
@@ -87,5 +88,52 @@ describe('token va ruxsat tekshiruvi', () => {
 
     const op = `Bearer ${makeToken(uuidv4(), { role: 'owner' })}`;
     expect((await h.http().get('/admin/v1/me').set('Authorization', op)).status).toBe(403);
+  });
+});
+
+describe('logout: bekor qilingan sessiya (Redis bl:sid:<sid>)', () => {
+  let h: Harness;
+  beforeAll(async () => { h = await createHarness(); });
+  afterAll(async () => { await h.app.close(); });
+  afterEach(() => { h.sessions.revoked.clear(); h.sessions.fail = false; });
+
+  it('sid bekor qilingan token → 401 AUTH_TOKEN_EXPIRED; boshqa sessiya tokeni ishlaydi', async () => {
+    const id = h.people.manager.id;
+    const revoked = `Bearer ${makeToken(id, { sid: 'sid-logged-out' })}`;
+    const alive = `Bearer ${makeToken(id, { sid: 'sid-alive' })}`;
+    expect((await h.http().get('/admin/v1/me').set('Authorization', revoked)).status).toBe(200);
+    h.sessions.revoked.add('sid-logged-out');
+    const r = await h.http().get('/admin/v1/me').set('Authorization', revoked);
+    expect(r.status).toBe(401);
+    expect(r.body).toEqual({ error: { key: 'AUTH_TOKEN_EXPIRED', params: {} } });
+    expect((await h.http().get('/admin/v1/staff').set('Authorization', revoked)).status).toBe(401);
+    expect((await h.http().get('/admin/v1/me').set('Authorization', alive)).status).toBe(200);
+  });
+
+  it('bekor qilingan superadmin tokeni bootstrap provision qilmaydi', async () => {
+    const id = uuidv4();
+    h.sessions.revoked.add('sid-boot');
+    const r = await h.http().get('/admin/v1/me').set('Authorization', `Bearer ${makeToken(id, { role: 'superadmin', sid: 'sid-boot' })}`);
+    expect(r.status).toBe(401);
+    expect(await h.ds.getRepository(Staff).findOne({ where: { id } })).toBeNull();
+  });
+
+  it('Redis ishlamasa — rad etiladi (fail closed, 500); /healthz Redis ga bog\'liq emas', async () => {
+    h.sessions.fail = true;
+    const r = await h.as('root').get('/admin/v1/me');
+    expect(r.status).toBe(500);
+    expect(r.body).toEqual({ error: { key: 'INTERNAL_ERROR', params: { reason: 'session_check_unavailable' } } });
+    expect((await h.http().get('/healthz')).status).toBe(200);
+  });
+
+  it('RedisSessionRevocationPort: Redis ga ulanib bo\'lmasa ~timeout ichida xato beradi', async () => {
+    const port = new RedisSessionRevocationPort('redis://127.0.0.1:1', 300);
+    const t0 = Date.now();
+    try {
+      await expect(port.isRevoked('x')).rejects.toBeInstanceOf(Error);
+      expect(Date.now() - t0).toBeLessThan(2500);
+    } finally {
+      port.close();
+    }
   });
 });

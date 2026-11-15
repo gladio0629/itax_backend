@@ -61,7 +61,7 @@ func (s *Service) kick() {
 
 func forbiddenForOrderStatus(st domain.OrderStatus) *apperr.Error {
 	switch st {
-	case domain.Accepted:
+	case domain.Accepted, domain.Arrived:
 		return apperr.Forbidden("driver_assigned", nil)
 	case domain.InProgress:
 		return apperr.Forbidden("trip_started", nil)
@@ -469,7 +469,7 @@ func (s *Service) AcceptOffer(ctx context.Context, driver, offerID uuid.UUID, tr
 		return s.mapAcceptErr(trip, err, orderID)
 	}
 	switch view.Order.Status {
-	case domain.Accepted, domain.InProgress, domain.Completed:
+	case domain.Accepted, domain.Arrived, domain.InProgress, domain.Completed:
 		return domain.Trip{}, apperr.OrderAlreadyTaken(orderID.String())
 	case domain.Cancelled, domain.Expired:
 		return domain.Trip{}, apperr.OrderNotFound(orderID.String())
@@ -545,8 +545,9 @@ func forbiddenForTripStatus(st domain.TripStatus) *apperr.Error {
 	}
 }
 
-func (s *Service) StartTrip(ctx context.Context, driver, tripID uuid.UUID) (domain.Trip, error) {
-	t, err := s.st.StartTrip(ctx, tripID, driver, s.now())
+func (s *Service) StartTrip(ctx context.Context, driver, tripID uuid.UUID, trace string) (domain.Trip, error) {
+	now := s.now()
+	t, err := s.st.StartTrip(ctx, tripID, driver, now, func(t domain.Trip) (events.Event, error) { return events.TripStarted(t, now, trace) })
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
@@ -556,6 +557,7 @@ func (s *Service) StartTrip(ctx context.Context, driver, tripID uuid.UUID) (doma
 	case err != nil:
 		return domain.Trip{}, err
 	}
+	s.kick()
 	return t, nil
 }
 

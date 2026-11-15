@@ -1,13 +1,14 @@
-import { CanActivate, ExecutionContext, Inject, Injectable, SetMetadata, createParamDecorator } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable, Logger, SetMetadata, createParamDecorator } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import type { Request } from 'express';
 import { Actor, AuditService } from '../audit/audit.service';
-import { Errors } from '../common/errors';
+import { AppError, Errors } from '../common/errors';
 import { APP_CONFIG, AppConfig } from '../config/configuration';
 import { Staff } from '../entities/staff.entity';
 import { ROLES, RolesCatalog, StaffRole } from '../roles/roles.catalog';
 import { JwtVerifier, JwtVerifyError } from './jwt.verifier';
+import { SessionRevocationPort } from './session-revocation';
 
 export const JWT_VERIFIER = Symbol('JWT_VERIFIER');
 const PERM_KEY = 'perm';
@@ -28,12 +29,15 @@ export interface AdminRequest extends Request {
 /**
  * Global guard (default-deny):
  *  1. Authorization: Bearer — Ed25519 admin JWT (aud=admin, typ=access) tekshiriladi;
+ *     sessiya bekor qilinmaganligi (logout: Redis `bl:sid:<sid>`) tekshiriladi — Redis ishlamasa rad etiladi;
  *  2. xodim DB dan `sub` bo'yicha yuklanadi; holat active bo'lishi shart;
  *  3. ruxsat roles.json dan DB dagi ROL bo'yicha olinadi (token `perms` ga ishonilmaydi) —
  *     rol o'zgarishi yoki bloklash darhol kuchga kiradi.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
+  private readonly log = new Logger(AdminGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     @Inject(JWT_VERIFIER) private readonly verifier: JwtVerifier,
@@ -41,6 +45,7 @@ export class AdminGuard implements CanActivate {
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly ds: DataSource,
     private readonly audit: AuditService,
+    private readonly sessions: SessionRevocationPort,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -59,6 +64,17 @@ export class AdminGuard implements CanActivate {
       if (e instanceof JwtVerifyError) throw e.reason === 'wrong_audience' ? Errors.forbidden() : Errors.tokenInvalid();
       throw e;
     }
+
+    // Logout qilingan sessiya — yaroqsiz token bilan bir xil 401. Tekshiruv staff yuklash (va superadmin
+    // bootstrap) dan OLDIN. Redis xatosi — fail closed: xato yuqoriga ketadi (500), so'rov o'tkazilmaydi.
+    let revoked: boolean;
+    try {
+      revoked = await this.sessions.isRevoked(claims.sid);
+    } catch (e) {
+      this.log.error(`sessiya bekor qilinganini tekshirib bo'lmadi: ${(e as Error).message}`);
+      throw new AppError(500, 'INTERNAL_ERROR', { reason: 'session_check_unavailable' });
+    }
+    if (revoked) throw Errors.tokenInvalid();
 
     const requestId = (req.headers['x-request-id'] as string | undefined) ?? undefined;
     const staff = await this.loadStaff(claims.sub, claims.role, requestId);

@@ -1,7 +1,8 @@
 import { PipeTransform } from '@nestjs/common';
 import { Errors } from './errors';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Yumshoq UUID formati (versiya/variant tekshirilmaydi: 00000000-...-0001 kabi ID lar ham o'tadi). */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Yo'l parametri 1..4 butun son bo'lishi shart; aks holda 422 VALIDATION_ERROR. */
 export class StepPipe implements PipeTransform<string, number> {

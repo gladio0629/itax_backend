@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { buildAppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
+import { InMemorySessionRevocationPort, SessionRevocationPort } from '../../src/auth/session-revocation';
 import { AppConfig } from '../../src/config/configuration';
 import { ENTITIES } from '../../src/entities';
 import { Staff } from '../../src/entities/staff.entity';
@@ -14,6 +15,7 @@ import { EventPublisher } from '../../src/events/event-publisher';
 import { NatsService } from '../../src/events/nats.service';
 import { OutboxDispatcher } from '../../src/events/outbox.dispatcher';
 import { Init1731450000000 } from '../../src/migrations/1731450000000-init';
+import { Complaints1731450000002 } from '../../src/migrations/1731450000002-complaints';
 import { MockData } from '../../src/ports/mock-platform';
 import { StaffRole } from '../../src/roles/roles.catalog';
 import request from 'supertest';
@@ -48,8 +50,13 @@ export interface Harness {
   publisher: FakePublisher;
   dispatcher: OutboxDispatcher;
   people: Record<string, Person>;
+  /** logout qilingan sessiyalar (Redis o'rniga) */
+  sessions: InMemorySessionRevocationPort;
   http: () => ReturnType<typeof request>;
-  as: (name: string) => { get: (u: string) => request.Test; post: (u: string) => request.Test; put: (u: string) => request.Test; delete: (u: string) => request.Test };
+  as: (name: string) => {
+    get: (u: string) => request.Test; post: (u: string) => request.Test; put: (u: string) => request.Test;
+    patch: (u: string) => request.Test; delete: (u: string) => request.Test;
+  };
   audit: (action?: string) => Promise<{ action: string; actor_id: string | null; entity_id: string; before: any; after: any }[]>;
 }
 
@@ -57,8 +64,12 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
   const db = newDb();
   db.public.registerFunction({ name: 'version', returns: 'text' as never, implementation: () => 'PostgreSQL 16' });
   db.public.registerFunction({ name: 'current_database', returns: 'text' as never, implementation: () => 'test' });
+  // shikoyatlar migratsiyasidagi CHECK uchun (pg-mem da yo'q)
+  db.public.registerFunction({
+    name: 'char_length', args: ['text' as never], returns: 'integer' as never, implementation: (s: string) => [...s].length,
+  });
   const ds: DataSource = await db.adapters.createTypeormDataSource({
-    type: 'postgres', entities: ENTITIES, migrations: [Init1731450000000], // trigger migratsiyasi plpgsql talab qiladi — pg-mem da yo'q
+    type: 'postgres', entities: ENTITIES, migrations: [Init1731450000000, Complaints1731450000002], // trigger migratsiyasi plpgsql talab qiladi — pg-mem da yo'q
   });
   await ds.initialize();
   await ds.runMigrations();
@@ -67,6 +78,8 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
     port: 0,
     identity: { mode: 'mock', baseUrl: '', internalToken: '', timeoutMs: 1000 },
     lookups: { mode: 'mock', driverBaseUrl: '' },
+    orders: { mode: 'mock', baseUrl: '' },
+    redis: { url: '', timeoutMs: 1000 },
     db: { host: '', port: 0, user: '', password: '', name: '' }, natsUrl: '',
     jwt: { publicKeyPem: PUBLIC_PEM, issuer: ISSUER }, rolesFile: `${process.cwd()}/../../shared/roles/roles.json`,
     tzOffsetHours: 5, publishApprovedOnResolved: true,
@@ -74,6 +87,7 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
     ...over,
   };
   const publisher = new FakePublisher();
+  const sessions = new InMemorySessionRevocationPort();
   const dbModule = TypeOrmModule.forRootAsync({
     useFactory: () => ({ type: 'postgres' as const }),
     dataSourceFactory: async () => ds,
@@ -81,6 +95,7 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
   const mod = await Test.createTestingModule({ imports: [buildAppModule(cfg, dbModule)] })
     .overrideProvider(NatsService).useValue({ publish: (s: string, p: Record<string, unknown>, m: string) => publisher.publish(s, p, m) })
     .overrideProvider(EventPublisher).useValue(publisher)
+    .overrideProvider(SessionRevocationPort).useValue(sessions)
     .compile();
   const app = mod.createNestApplication({ logger: false });
   configureApp(app);
@@ -113,6 +128,7 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
       get: (u: string) => http().get(u).set('Authorization', a),
       post: (u: string) => http().post(u).set('Authorization', a),
       put: (u: string) => http().put(u).set('Authorization', a),
+      patch: (u: string) => http().patch(u).set('Authorization', a),
       delete: (u: string) => http().delete(u).set('Authorization', a),
     };
   };
@@ -121,6 +137,6 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
     return action ? rows.filter((r: { action: string }) => r.action === action) : rows;
   };
   return {
-    app, ds, mock: app.get(MockData), publisher, dispatcher: app.get(OutboxDispatcher), people, http, as, audit,
+    app, ds, mock: app.get(MockData), publisher, dispatcher: app.get(OutboxDispatcher), people, sessions, http, as, audit,
   };
 }

@@ -66,6 +66,17 @@ func (c Config) InternalToken() string {
 	return ""
 }
 
+// InternalTokenList — kiruvchi /internal/* so'rovlari uchun qabul qilinadigan barcha tokenlar.
+func (c Config) InternalTokenList() []string {
+	var out []string
+	for _, t := range strings.Split(c.InternalTokens, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // usesRealServices — kamida bitta ichki servis real HTTP orqali chaqiriladimi.
 func (c Config) usesRealServices() bool {
 	for _, u := range []string{c.PricingURL, c.MatchingURL, c.WalletURL} {

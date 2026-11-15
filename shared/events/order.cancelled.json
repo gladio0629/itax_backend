@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/order.cancelled.v1.json",
+  "title": "order.cancelled",
+  "description": "Buyurtma admin tomonidan bekor qilindi (yo'lovchi o'zi bekor qilganda bu hodisa chiqmaydi).",
+  "x-producer": "trip-order",
+  "x-nats-subject": "izgo.order.cancelled.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "order.cancelled"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "order_id",
+        "passenger_id",
+        "driver_id",
+        "cancelled_by",
+        "reason",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "passenger_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "driver_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "cancelled_by": {
+          "enum": [
+            "admin"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "admin_decision",
+            "passenger_request",
+            "driver_request",
+            "duplicate",
+            "fraud",
+            "other"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

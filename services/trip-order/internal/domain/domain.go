@@ -72,15 +72,15 @@ func (p PaymentMethod) Valid() bool {
 
 // OrderStatus — buyurtma holati.
 //
-//	searching -> accepted -> in_progress -> completed
-//	searching -> cancelled (yo'lovchi)  |  searching -> expired (haydovchi topilmadi)
-//
-// OpenAPI enum'ida `arrived` ham bor, lekin unga o'tkazuvchi endpoint yo'q — amalga oshirilmagan.
+//	searching -> accepted [-> arrived] -> in_progress -> completed
+//	searching -> cancelled (yo'lovchi/admin)  |  searching -> expired (haydovchi topilmadi)
+//	accepted|arrived -> searching (haydovchi safarni bekor qildi: qayta qidiruv) | -> cancelled (admin)
 type OrderStatus string
 
 const (
 	Searching  OrderStatus = "searching"
 	Accepted   OrderStatus = "accepted"
+	Arrived    OrderStatus = "arrived"
 	InProgress OrderStatus = "in_progress"
 	Completed  OrderStatus = "completed"
 	Cancelled  OrderStatus = "cancelled"
@@ -89,7 +89,8 @@ const (
 
 var orderTransitions = map[OrderStatus][]OrderStatus{
 	Searching:  {Accepted, Cancelled, Expired},
-	Accepted:   {InProgress},
+	Accepted:   {Arrived, InProgress, Searching, Cancelled},
+	Arrived:    {InProgress, Searching, Cancelled},
 	InProgress: {Completed},
 }
 
@@ -103,7 +104,12 @@ func (s OrderStatus) CanTransitionTo(next OrderStatus) bool {
 }
 
 // Active — yo'lovchining faol buyurtmalar limitiga kiradimi (F-24).
-func (s OrderStatus) Active() bool { return s == Searching || s == Accepted || s == InProgress }
+func (s OrderStatus) Active() bool {
+	return s == Searching || s == Accepted || s == Arrived || s == InProgress
+}
+
+// Assigned — haydovchi biriktirilgan, safar hali boshlanmagan.
+func (s OrderStatus) Assigned() bool { return s == Accepted || s == Arrived }
 
 func (s OrderStatus) Terminal() bool { return s == Completed || s == Cancelled || s == Expired }
 
@@ -117,7 +123,7 @@ const (
 )
 
 var tripTransitions = map[TripStatus][]TripStatus{
-	TripAssigned:   {TripInProgress},
+	TripAssigned:   {TripInProgress, TripCancelled},
 	TripInProgress: {TripCompleted},
 }
 
@@ -321,6 +327,7 @@ const (
 	OfferPending  OfferStatus = "pending"
 	OfferAccepted OfferStatus = "accepted"
 	OfferClosed   OfferStatus = "closed"
+	OfferRejected OfferStatus = "rejected"
 )
 
 type Offer struct {
@@ -351,7 +358,32 @@ type Trip struct {
 	Commission  *int64
 	DistanceM   *int
 	DurationS   *int
-	CreatedAt   time.Time
+	ArrivedAt   *time.Time
+	CancelledAt *time.Time
+	// CancelledBy — driver | admin.
+	CancelledBy  *string
+	CancelReason *string
+	CreatedAt    time.Time
+}
+
+// NextActions — haydovchi hozir bajarishi mumkin bo'lgan amallar (klient holatdan o'zi xulosa chiqarmaydi).
+func (t Trip) NextActions() []string {
+	switch t.Status {
+	case TripAssigned:
+		if t.ArrivedAt == nil {
+			return []string{"arrive", "start", "cancel"}
+		}
+		return []string{"start", "cancel"}
+	case TripInProgress:
+		return []string{"complete"}
+	}
+	return []string{}
+}
+
+// TripView — haydovchi ro'yxatlari uchun: safar + buyurtma.
+type TripView struct {
+	Trip  Trip
+	Order Order
 }
 
 type ReasonKind string

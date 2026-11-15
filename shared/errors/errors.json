@@ -320,6 +320,13 @@
       "params": {
         "quote_id": "uuid"
       }
+    },
+    "TRIP_ORDER_UNAVAILABLE": {
+      "http": 502,
+      "description": "Backoffice: Trip & Order ichki API javob bermadi yoki kutilmagan javob berdi.",
+      "params": {
+        "reason": "string"
+      }
     }
   }
 }

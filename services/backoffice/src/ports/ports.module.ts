@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_CONFIG, AppConfig } from '../config/configuration';
+import { Errors } from '../common/errors';
+import { HttpOrdersPort } from './http-orders';
 import { HttpDriverLookupPort, HttpIdentityStaffPort, HttpUserLookupPort } from './http-ports';
 import { InternalHttpClient } from './internal-http';
 import {
@@ -14,7 +16,8 @@ import {
  * Boshqa servislar bilan aloqa.
  *  - IdentityStaffPort — haqiqiy HTTP (IDENTITY_STAFF_MODE=http, default); testlarda mock.
  *  - Driver/User lookup — HTTP (INTERNAL_LOOKUP_MODE=http; docker-compose'da default). Kod defaulti va testlarda MOCK.
- *  - Qolganlari (drivers/passengers CRUD, orders, wallet, stats) hozir mock.
+ *  - OrdersPort — Trip & Order ichki API (ORDERS_MODE=http; docker-compose'da). Kod defaulti va testlarda MOCK.
+ *  - Qolganlari (drivers/passengers CRUD, wallet, stats dagi haydovchi/yo'lovchi raqamlari) hozir mock.
  */
 @Global()
 @Module({
@@ -22,7 +25,15 @@ import {
     MockData,
     { provide: DriversPort, useClass: MockDriversPort },
     { provide: PassengersPort, useClass: MockPassengersPort },
-    { provide: OrdersPort, useClass: MockOrdersPort },
+    {
+      provide: OrdersPort,
+      inject: [APP_CONFIG, MockData],
+      useFactory: (cfg: AppConfig, d: MockData) => cfg.orders.mode === 'http'
+        ? new HttpOrdersPort(new InternalHttpClient(
+          cfg.orders.baseUrl, cfg.identity.internalToken, cfg.identity.timeoutMs, fetch, Errors.tripOrderUnavailable,
+        ))
+        : new MockOrdersPort(d, cfg),
+    },
     { provide: WalletPort, useClass: MockWalletPort },
     { provide: StatsPort, useClass: MockStatsPort },
     {

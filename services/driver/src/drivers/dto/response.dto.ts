@@ -1,3 +1,4 @@
+import type { ChildSeatAge } from '../entities/capabilities.entity';
 import type { DriverState } from '../entities/driver.entity';
 
 export class CarResponseDto {
@@ -53,4 +54,31 @@ export class InternalDriverResponseDto {
   vehiclePlate!: string | null;
   vehicleModel!: string | null;
   rating!: number;
+}
+
+export class DriverRouteResponseDto {
+  id!: string;
+  a_city_id!: string;
+  b_city_id!: string;
+  both_ways!: boolean;
+}
+
+/** GET/PUT /api/v1/drivers/me/routes */
+export class DriverRoutesResponseDto {
+  routes!: DriverRouteResponseDto[];
+}
+
+/** GET/PUT /api/v1/drivers/me/capabilities */
+export class DriverCapabilitiesResponseDto {
+  child_seat!: boolean;
+  child_seat_ages!: ChildSeatAge[];
+  pets!: boolean;
+  big_luggage!: boolean;
+}
+
+/** GET /internal/driver/stats — Backoffice dashboard uchun. */
+export class DriverStatsResponseDto {
+  total!: number;
+  by_state!: Record<DriverState, number>;
+  new_in_range!: number;
 }

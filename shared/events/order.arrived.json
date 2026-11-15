@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/order.arrived.v1.json",
+  "title": "order.arrived",
+  "description": "Haydovchi olib ketish joyiga yetib keldi (buyurtma accepted -> arrived).",
+  "x-producer": "trip-order",
+  "x-nats-subject": "izgo.order.arrived.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "order.arrived"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "trip_id",
+        "order_id",
+        "driver_id",
+        "passenger_id",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trip_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "driver_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "passenger_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

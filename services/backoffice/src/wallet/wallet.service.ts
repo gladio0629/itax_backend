@@ -1,18 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Actor, AuditService } from '../audit/audit.service';
 import { Errors } from '../common/errors';
+import { applyCursor, decodeCursor, DEFAULT_LIMIT, Page, toPage } from '../common/pagination';
 import { isUuid } from '../common/pipes';
 import { Correction } from '../entities/correction.entity';
+import { Staff } from '../entities/staff.entity';
 import { WalletPort } from '../ports/ports';
-import { CorrectionCreateDto } from './wallet.dto';
+import { CorrectionCreateDto, CorrectionListQuery } from './wallet.dto';
 
 export interface CorrectionView {
   id: string; wallet_id: string; amount: number; reason: string; approval_status: string;
   created_by: string; approved_by: string | null; reject_reason: string | null; created_at: string;
 }
+
+/** Ro'yxatda yaratgan xodim ismi ham (xodim topilmasa null) */
+export interface CorrectionListItem extends CorrectionView { created_by_name: string | null }
 
 const toView = (c: Correction): CorrectionView => ({
   id: c.id, wallet_id: c.walletId, amount: c.amount, reason: c.reason, approval_status: c.approvalStatus,
@@ -31,6 +36,24 @@ export class WalletService {
     private readonly audit: AuditService,
     private readonly wallet: WalletPort,
   ) {}
+
+  /** Yangilari birinchi; approval_status bo'yicha filtr (berilmasa — hammasi). */
+  async list(q: CorrectionListQuery): Promise<Page<CorrectionListItem>> {
+    const limit = q.limit ?? DEFAULT_LIMIT;
+    const qb = this.ds.getRepository(Correction).createQueryBuilder('c');
+    if (q.approval_status) qb.andWhere('c.approvalStatus = :st', { st: q.approval_status });
+    applyCursor(qb, 'c', decodeCursor(q.cursor));
+    const rows = await qb.orderBy('c.createdAt', 'DESC').addOrderBy('c.id', 'DESC').take(limit + 1).getMany();
+    const page = toPage(rows, limit, (r) => r.createdAt);
+    // xodim ismlari alohida so'rov bilan (join o'rniga)
+    const ids = [...new Set(page.data.map((c) => c.createdBy))];
+    const staff = ids.length ? await this.ds.getRepository(Staff).find({ where: { id: In(ids) } }) : [];
+    const names = new Map(staff.map((s) => [s.id, s.fullName]));
+    return {
+      data: page.data.map((c) => ({ ...toView(c), created_by_name: names.get(c.createdBy) ?? null })),
+      cursor: page.cursor,
+    };
+  }
 
   async create(actor: Actor, dto: CorrectionCreateDto, idempotencyKey?: string): Promise<CorrectionView> {
     if (idempotencyKey !== undefined && !isUuid(idempotencyKey)) throw Errors.validation({ 'idempotency-key': 'isUuid' });

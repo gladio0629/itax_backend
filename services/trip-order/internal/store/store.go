@@ -193,13 +193,18 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
-const tripCols = `id, order_id, driver_id, passenger_id, status, started_at, completed_at, final_price, commission, distance_m, duration_s, created_at`
+const tripCols = `id, order_id, driver_id, passenger_id, status, started_at, completed_at, final_price, commission, distance_m, duration_s, created_at,
+	arrived_at, cancelled_at, cancelled_by, cancel_reason`
+
+func tripDest(t *domain.Trip, st *string) []any {
+	return []any{&t.ID, &t.OrderID, &t.DriverID, &t.PassengerID, st, &t.StartedAt, &t.CompletedAt,
+		&t.FinalPrice, &t.Commission, &t.DistanceM, &t.DurationS, &t.CreatedAt, &t.ArrivedAt, &t.CancelledAt, &t.CancelledBy, &t.CancelReason}
+}
 
 func scanTrip(row pgx.Row) (domain.Trip, error) {
 	var t domain.Trip
 	var st string
-	if err := row.Scan(&t.ID, &t.OrderID, &t.DriverID, &t.PassengerID, &st, &t.StartedAt, &t.CompletedAt,
-		&t.FinalPrice, &t.Commission, &t.DistanceM, &t.DurationS, &t.CreatedAt); err != nil {
+	if err := row.Scan(tripDest(&t, &st)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Trip{}, domain.ErrNotFound
 		}
@@ -243,7 +248,7 @@ func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain
 			}
 		}
 		var active int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM orders WHERE passenger_id=$1 AND status IN ('searching','accepted','in_progress')`,
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM orders WHERE passenger_id=$1 AND status IN ('searching','accepted','arrived','in_progress')`,
 			o.PassengerID).Scan(&active); err != nil {
 			return err
 		}
@@ -377,7 +382,7 @@ func (s *Store) CancelOrder(ctx context.Context, id, passenger uuid.UUID, reason
 	changed := false
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		o, err := scanOrder(tx.QueryRow(ctx, `
-			UPDATE orders SET status='cancelled', cancel_reason=$3, cancel_comment=$4, version=version+1, updated_at=$5
+			UPDATE orders SET status='cancelled', cancel_reason=$3, cancel_comment=$4, cancelled_by='passenger', version=version+1, updated_at=$5
 			WHERE id=$1 AND passenger_id=$2 AND status='searching' RETURNING `+orderColList,
 			id, passenger, reason, comment, trunc(now)))
 		if err == nil {
@@ -439,7 +444,7 @@ func (s *Store) ExpireStale(ctx context.Context, now time.Time) ([]domain.Order,
 // CountActiveOrders — yo'lovchining faol buyurtmalari soni (Redis hisoblagichini tuzatish uchun).
 func (s *Store) CountActiveOrders(ctx context.Context, passenger uuid.UUID) (int, error) {
 	var n int
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM orders WHERE passenger_id=$1 AND status IN ('searching','accepted','in_progress')`, passenger).Scan(&n)
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM orders WHERE passenger_id=$1 AND status IN ('searching','accepted','arrived','in_progress')`, passenger).Scan(&n)
 	return n, err
 }
 
@@ -530,7 +535,7 @@ func (s *Store) AcceptOffer(ctx context.Context, offerID, driver uuid.UUID, now 
 			return err
 		}
 		if offerStatus == string(domain.OfferAccepted) { // qayta urinish: xuddi shu haydovchi allaqachon olgan
-			trip, err = scanTrip(tx.QueryRow(ctx, `SELECT `+tripCols+` FROM trips WHERE order_id=$1 AND driver_id=$2`, orderID, driver))
+			trip, err = scanTrip(tx.QueryRow(ctx, `SELECT `+tripCols+` FROM trips WHERE order_id=$1 AND driver_id=$2 ORDER BY created_at DESC LIMIT 1`, orderID, driver))
 			return err
 		}
 		if !expires.After(now) {
@@ -564,7 +569,7 @@ func (s *Store) AcceptOffer(ctx context.Context, offerID, driver uuid.UUID, now 
 				return e
 			}
 			switch domain.OrderStatus(st) {
-			case domain.Accepted, domain.InProgress, domain.Completed:
+			case domain.Accepted, domain.Arrived, domain.InProgress, domain.Completed:
 				return domain.ErrAlreadyTaken
 			default: // cancelled / expired
 				return domain.ErrNotFound
@@ -600,7 +605,7 @@ func (s *Store) GetTrip(ctx context.Context, tripID, driver uuid.UUID) (domain.T
 }
 
 // StartTrip: assigned -> in_progress (buyurtma ham accepted -> in_progress).
-func (s *Store) StartTrip(ctx context.Context, tripID, driver uuid.UUID, now time.Time) (domain.Trip, error) {
+func (s *Store) StartTrip(ctx context.Context, tripID, driver uuid.UUID, now time.Time, mkEvent func(domain.Trip) (events.Event, error)) (domain.Trip, error) {
 	var out domain.Trip
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		t, err := scanTrip(tx.QueryRow(ctx, `
@@ -616,13 +621,20 @@ func (s *Store) StartTrip(ctx context.Context, tripID, driver uuid.UUID, now tim
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `UPDATE orders SET status='in_progress', version=version+1, updated_at=$2 WHERE id=$1 AND status='accepted'`,
+		tag, err := tx.Exec(ctx, `UPDATE orders SET status='in_progress', version=version+1, updated_at=$2 WHERE id=$1 AND status IN ('accepted','arrived')`,
 			t.OrderID, trunc(now))
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
 			return &domain.StateError{Trip: t.Status}
+		}
+		ev, err := mkEvent(t)
+		if err != nil {
+			return err
+		}
+		if err := insertOutbox(ctx, tx, ev); err != nil {
+			return err
 		}
 		out = t
 		return nil

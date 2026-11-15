@@ -60,6 +60,12 @@ func TestParseTripEvents(t *testing.T) {
 	if ref, err := ParseTripCompleted(body("trip.completed", 1, d.String(), tr.String())); err != nil || ref.TripID != tr {
 		t.Fatalf("%+v %v", ref, err)
 	}
+	if ref, err := ParseTripCancelled(body("trip.cancelled", 1, d.String(), tr.String())); err != nil || ref.DriverID != d || ref.TripID != tr {
+		t.Fatalf("trip.cancelled: %+v %v", ref, err)
+	}
+	if _, err := ParseTripCancelled(body("trip.completed", 1, d.String(), tr.String())); !errors.Is(err, ErrPoison) {
+		t.Fatalf("trip.cancelled boshqa hodisani qabul qildi: %v", err)
+	}
 	bad := map[string][]byte{
 		"buzuq json":          []byte(`{`),
 		"bo'sh":               []byte(``),

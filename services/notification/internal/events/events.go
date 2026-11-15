@@ -18,6 +18,10 @@ var Subjects = map[string]string{
 	"izgo.trip.completed.v1":       "trip.completed",
 	"izgo.wallet.limit_reached.v1": "wallet.limit_reached",
 	"izgo.driver.approved.v1":      "driver.approved",
+	"izgo.order.arrived.v1":        "order.arrived",
+	"izgo.trip.started.v1":         "trip.started",
+	"izgo.trip.cancelled.v1":       "trip.cancelled",
+	"izgo.order.cancelled.v1":      "order.cancelled",
 }
 
 // ErrPoison — buzuq hodisa (qayta urinish foyda bermaydi): tashlab yuboriladi.
@@ -102,6 +106,41 @@ func Parse(raw []byte) (Notice, error) {
 		n.Kind, n.Recipient, n.ID = "wallet", get("driver_id"), get("wallet_id")
 	case "driver.approved":
 		n.Kind, n.Recipient, n.ID = "driver", get("driver_id"), get("driver_id")
+	case "order.arrived": // haydovchi yetib keldi -> yo'lovchiga
+		get("trip_id")
+		get("driver_id")
+		n.Kind, n.Recipient, n.ID = "order", get("passenger_id"), get("order_id")
+		n.OrderID, n.Status = &n.ID, "arrived"
+	case "trip.started": // safar boshlandi -> yo'lovchiga
+		get("driver_id")
+		n.Kind, n.Recipient, n.ID = "trip", get("passenger_id"), get("trip_id")
+		oid := get("order_id")
+		n.OrderID, n.Status = &oid, "in_progress"
+	case "trip.cancelled":
+		// haydovchi bekor qilsa -> yo'lovchiga (buyurtma qayta searching); admin bekor qilsa -> haydovchiga
+		by, _ := p["cancelled_by"].(string)
+		status, _ := p["order_status"].(string)
+		passenger, driver := get("passenger_id"), get("driver_id")
+		n.Kind, n.ID = "trip", get("trip_id")
+		oid := get("order_id")
+		n.OrderID = &oid
+		switch by {
+		case "driver":
+			n.Recipient = passenger
+		case "admin":
+			n.Recipient = driver
+		default:
+			errs = append(errs, fmt.Errorf("%w: cancelled_by %q", ErrPoison, by))
+		}
+		switch status {
+		case "searching", "cancelled":
+			n.Status = status
+		default:
+			errs = append(errs, fmt.Errorf("%w: order_status %q", ErrPoison, status))
+		}
+	case "order.cancelled": // admin bekor qildi -> yo'lovchiga
+		n.Kind, n.Recipient, n.ID = "order", get("passenger_id"), get("order_id")
+		n.OrderID, n.Status = &n.ID, "cancelled"
 	default:
 		return Notice{}, fmt.Errorf("%w: noma'lum hodisa %q", ErrPoison, env.Event)
 	}
@@ -120,7 +159,7 @@ func (n Notice) Params() map[string]string {
 	switch n.Event {
 	case "offer.created":
 		return map[string]string{"offer_id": n.ID.String()}
-	case "trip.completed":
+	case "trip.completed", "trip.started", "trip.cancelled":
 		return map[string]string{"trip_id": n.ID.String(), "order_id": n.OrderID.String()}
 	case "wallet.limit_reached":
 		return map[string]string{"wallet_id": n.ID.String()}
