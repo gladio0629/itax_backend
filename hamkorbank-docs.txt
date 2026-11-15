@@ -1,0 +1,3969 @@
+HAMKORBANK ACQUIRING API — TO'LIQ HUJJAT
+Manba: https://acq-docs.hamkorbank.uz/acquiring-docs
+Yig'ilgan sana: 2026-11-12 (Playwright orqali)
+
+Eslatma:
+- Har bir sahifa bir marta berilgan (asl skriptdagi takrorlar olib tashlangan).
+- Metod sahifalari (/acquiring-docs/developers/<method>) alohida yig'ilgan.
+- Quyidagi metodlar uchun hujjatda "Нет данных." — serverning o'zi ham bo'sh qaytaradi
+  (https://acq.hamkorbank.uz/api/v2/ecomm/dev-method-guide/<id> -> "details": []):
+  pay.get.ext, pay.create.url, pay.get.inv, pay.a2c.aml, pay.services,
+  pay.service.payment.epos, pay.service.fiscal, bo.pay.create, bo.pay.confirm,
+  bo.pay.cancel, bo.pay.cancel.partial, bo.pay.a2c, bo.card.info, bo.card.balance
+
+Hujjatdagi nomuvofiqliklar:
+- Callback signature misolida 40 belgi, matnda esa "64-символьный SHA3-256" deyilgan.
+- "Общая информация"da body = method + params; misollar esa JSON-RPC 2.0 (jsonrpc, params massiv, id).
+- card.check.balance so'rov misolida "method": "card.info" yozilgan.
+- tran.check so'rov misolida method/params o'rniga "result" yozilgan.
+- tran.separation: total_amount va vendors tavsifi "время начала/окончания" (copy-paste xato).
+- pay.create.url hujjati bo'sh, holbuki callback aynan shu metodga bog'langan.
+
+################################################################################
+#                         UMUMIY SAHIFALAR                                     #
+################################################################################
+=== Общая информация (https://acq-docs.hamkorbank.uz/acquiring-docs) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Общая информация
+Формат взаимодействия с API
+Схема по процессу взаимодействия
+
+Данное руководство предназначено для разработчиков, выполняющих интеграцию с API Internet Acquiring.
+
+Для работы с API доступны две среды:
+
+Тестовая – используется для разработки и тестирования.
+Продуктивная – используется для проведения реальных операций.
+
+Адреса API, а также данные для авторизации предоставляются отдельно.
+
+Формат взаимодействия с API
+
+Обмен данными с API осуществляется посредством HTTP-запросов в формате JSON.
+
+Каждый запрос должен содержать следующие обязательные элементы.
+
+HTTP-заголовки (Headers)
+Content-Type – application/json; charset=utf-8
+Accept – application/json
+Тело запроса (Body)
+
+Тело запроса передаётся в формате JSON и содержит следующие параметры:
+
+method – название вызываемого метода API.
+params – параметры, необходимые для выполнения метода.
+Схема по процессу взаимодействия
+
+=== Авторизация (https://acq-docs.hamkorbank.uz/acquiring-docs/authorization) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Авторизация
+Инструкция по созданию и использованию сертификата
+Примеры ответа при неправильной авторизации
+Передача токена в заголовке запроса
+Спецификация методов
+
+Для обеспечения безопасности API реализована двухступенчатая авторизация:
+
+Two-Way SSL (отправка клиентского сертификата при вызовах)
+OAuth2 (Bearer Token)
+Инструкция по созданию и использованию сертификата
+
+Сертификат выдаётся клиенту Банком. Для получения сертификата пользователь должен предоставить CSR файл Банку.
+
+При создании используются команды openssl через командную строку.
+
+Создание Private_key организации пользователя (этот *.key должен храниться у пользователя, этот ключ нужен только для сервисов пользователя, банку он не предоставляется!)
+
+openssl genrsa -des3 -out user1.key 4096
+
+Создание сертификата организации пользователя с использованием Private_key (этот сгенерированный сертификат *.csr предоставляется сотрудникам банка)
+
+openssl req -new -key user1.key -out user1.csr
+
+Созданный CSR файл предоставляется Банку. Банк, основываясь на этом файле, создаёт сертификат и предоставляет его пользователю.
+
+Банк вводит сертификат пользователя на сервер банка на основании лимита на 1 год работы в сервисах банка и предоставляет пользователю сертификат в виде *.crt — этот сертификат необходимо продлевать ежегодно!
+
+Сертификат, предоставленный банком (*.crt), используется в конвертации (*.pfx, *.p12, ...) или в своём виде (*.key и *.crt) в зависимости от потребностей технологии (программного обеспечения), используемой пользователем (организацией).
+
+Конвертация .crt файла в pfx:
+
+openssl pkcs12 -export -out output.pfx -inkey private.key -in fullchain.crt
+Примеры ответа при неправильной авторизации
+
+Пример ответа при отправке некорректного сертификата
+
+403 Forbidden
+<html>
+<head>
+	<title>403 Forbidden</title>
+</head>
+<body>
+	<center>
+		<h1>403 Forbidden</h1>
+	</center>
+	<hr>
+	<center>nginx</center>
+</body>
+</html>
+
+Пример ответа при отправке некорректного токена
+
+401 Unauthorized
+{
+    "error_code": "900902",
+    "error_note": "Missing Credentials. Invalid Credentials. Make sure your API invocation call has a header: 'Authorization : Bearer ACCESS_TOKEN' or 'Authorization : Basic ACCESS_TOKEN' or 'apikey: API_KEY'",
+    "data": {},
+    "status": "Failed"
+}
+Передача токена в заголовке запроса
+
+Каждый запрос должен отправляться с токеном в заголовке Authorization.
+
+Спецификация методов
+Метод получения токена
+Имя запроса	token
+Описание	Получение токена
+Адрес	https://host/token
+Протокол	REST
+Формат запроса	JSON
+Режим	Онлайн
+Авторизация	Basic Auth
+Кодировка	UTF-8
+HTTP метод	POST
+
+Пример заголовка авторизации:
+
+Authorization: Basic base64({Key}:{Secret})
+
+Пример запроса:
+
+{
+    "grant_type" : "client_credentials"
+}
+Тело запроса является константой, в заголовке как базовая аутентификация передаётся key и secret, которые выдаются пользователю Банком.
+
+Параметры ответа:
+
+№	Название	Тип	Описание
+1	access_token	string	Токен
+2	token_type	string	Тип токена
+3	expires_in	number	Срок действия токена (в секундах)
+
+Пример успешного ответа на запрос на получение токена:
+
+{
+    "access_token": "eyJ4NX…",
+    "scope": "default",
+    "token_type": "Bearer",
+    "expires_in": 3600
+}
+
+Пример ответа на запрос в виде JSON-сообщения при возникновении ошибки:
+
+{
+    "error_description": "A valid OAuth client could not be found for client_id: {username}",
+    "error": "invalid_client"
+}
+
+=== Методы (https://acq-docs.hamkorbank.uz/acquiring-docs/developers) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+
+Платежи
+
+Выплаты на карту (Account-to-Card)
+
+Карты
+
+Счета
+
+Сплитование платежей
+
+MUNIS
+
+BO Gateway: Платежи
+
+BO Gateway: Карты
+
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Методы
+Платежи
+Создание платежа
+Подтверждение платежа
+Подтверждение холдированного платежа
+Отмена платежа
+Частичный возврат средств
+Получение информации о платеже
+Получение информации о платеже по external_id
+Создание платежной ссылки (счета на оплату)
+Получение информации о счете на оплату
+Повторная отправка SMS-кода
+Выплаты на карту (Account-to-Card)
+Выплата средств на карту
+Выплата средств на карту с проверкой по черному списку
+Списание холдированных средств и зачисление получателю
+Карты
+Получение списка карт пользователя
+Добавление карты
+Подтверждение карты
+Получение информации по карте
+Проверка баланса карты
+Счета
+Получение истории счета
+Получение информации о счете
+Сплитование платежей
+Получение баланса счета мерчанта
+Разделение суммы транзакции
+Проверка статуса транзакции
+Получение списка вендоров
+MUNIS
+Получение каталога услуг
+Подготовка к оплате
+Подтверждение платежа
+Одноэтапная оплата через EPOS
+Получение информации об инвойсе
+Оплата без EPOS
+Получение ссылки на фискальный чек платежа
+BO Gateway: Платежи
+Создание платежа через шлюз bo-gate
+Подтверждение платежа через шлюз bo-gate
+Полный возврат средств на карту через шлюз bo-gate
+Частичный возврат средств на карту через шлюз bo-gate
+Пополнение средств карты через шлюз bo-gate
+BO Gateway: Карты
+Получение данных карты через шлюз bo-gate
+Получение баланса карты через шлюз bo-gate
+
+=== Callback запрос (https://acq-docs.hamkorbank.uz/acquiring-docs/callback) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Callback запрос
+При создании платежной ссылки (инвойса)
+Тело запроса callback
+Алгоритм хеширования CalculateHash
+Примеры реализации
+Важные замечания
+
+Callbacks или «колбеки» являются неотъемлемой частью взаимодействия нашего API с вашим сервером. Они позволяют вашему сервису получать уведомления о различных событиях и реагировать на них в реальном времени.
+
+Ваш сервер должен обработать полученный колбек запрос и вернуть статус 200 OK. Это подтверждает нашему серверу, что уведомление было получено и обработано.
+
+При создании платежной ссылки (инвойса)
+Для работы с callback необходимо предварительно получить key и secret у администраторов.
+Тело запроса callback
+{
+  "signature": "865CA1F6E2EC7E3C11666967C91FF4FADF4BD7D0",
+  "ext_id": "ext-test-1234567",
+  "state": 2,
+  "created_at": "2025-03-13 11:11:32",
+  "error": {
+    "code": 0,
+    "message": ""
+  }
+}
+Поле	Описание
+signature	Хеш (SHA3-256), вычисленный по алгоритму CalculateHash — сверяется получателем с ext_id для проверки подлинности запроса
+ext_id	external_id, переданный при вызове pay.create.url
+state	Состояние платежа
+created_at	Дата создания платежа
+error.code	Код ошибки
+error.message	Сообщение об ошибке
+Алгоритм хеширования CalculateHash
+
+Данная функция вычисляет двухэтапный SHA3-256 хеш на основе входного UUID с использованием фиксированных префикса и секрета.
+
+Входные данные
+
+externalID — строка, содержащая то, что было передано в pay.create.url (например, ext-test-1234567)
+
+Выходные данные
+
+Строка в верхнем регистре, содержащая 64-символьный шестнадцатеричный SHA3-256 хеш.
+
+Константы
+prefix	"key"
+secret	"secret"
+Алгоритм (пошагово)
+
+Этап 1 — первый хеш:
+
+firstHashInput = prefix + secret + externalID
+firstHash = SHA3-256(firstHashInput)
+firstHashUpper = TO_UPPERCASE(firstHash)
+
+Этап 2 — второй хеш:
+
+secondHashInput = firstHashUpper + externalID
+finalHash = SHA3-256(secondHashInput)
+result = TO_UPPERCASE(finalHash)
+Псевдокод
+function CalculateHash(externalID: string) -> string:
+    prefix = "key"
+    secret = "secret"
+
+    # Этап 1
+    firstInput = prefix + secret + externalID
+    firstHash = sha3_256(firstInput)
+    firstHashUpper = uppercase(firstHash)
+
+    # Этап 2
+    secondInput = firstHashUpper + externalID
+    finalHash = sha3_256(secondInput)
+    return uppercase(finalHash)
+Пример ввода/вывода
+Вход	externalID = "ext-test-1234567"
+prefix = "key"
+secret = "secret"
+Выход	865CA1F6E2EC7E3C11666967C91FF4FADF4BD7D0
+Примеры реализации
+Python
+import hashlib
+
+
+def sha3_hash(text):
+    return hashlib.sha3_256(text.encode('utf-8')).hexdigest()
+
+
+def calculate_hash(externalID):
+    prefix = "key"
+    secret = "secret"
+
+    first_input = prefix + secret + externalID
+    first_hash = sha3_hash(first_input).upper()
+
+    second_input = first_hash + externalID
+    final_hash = sha3_hash(second_input).upper()
+
+    return final_hash
+JavaScript (Node.js)
+const crypto = require('crypto');
+
+function sha3Hash(text) {
+    return crypto.createHash('sha3-256').update(text).digest('hex');
+}
+
+function calculateHash(externalID) {
+    const prefix = "key";
+    const secret = "secret";
+
+    const firstInput = prefix + secret + externalID;
+    const firstHash = sha3Hash(firstInput).toUpperCase();
+
+    const secondInput = firstHash + externalID;
+    return sha3Hash(secondInput).toUpperCase();
+}
+Go
+func CalculateHash(externalID string) string {
+    const prefix = "key"
+    const secret = "secret"
+
+    firstHashInput := prefix + secret + externalID
+    firstHash := strings.ToUpper(sha3Hash(firstHashInput))
+
+    secondHashInput := firstHash + externalID
+    return strings.ToUpper(sha3Hash(secondHashInput))
+}
+
+func sha3Hash(input string) string {
+    hasher := sha3.New256()
+    _, err := hasher.Write([]byte(input))
+    if err != nil {
+        log.Printf("encode error: %v", err)
+        return ""
+    }
+    hashBytes := hasher.Sum(nil)
+    return hex.EncodeToString(hashBytes)
+}
+Важные замечания
+Все строки — UTF-8.
+Все хеши — в верхнем регистре (A–F, не a–f).
+Конкатенация строк — без разделителей.
+
+=== Коды ошибок (https://acq-docs.hamkorbank.uz/acquiring-docs/error-codes) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Коды ошибок
+Общие коды ошибок
+Коды ошибок методов MUNIS
+Общие коды ошибок
+
+Коды ошибок, возвращаемые методами API Internet Acquiring.
+
+​
+​
+Error code	Error message	Описание
+
+1000
+	Internal server error	Произошла ошибка. Пожалуйста, попробуйте позже
+
+1001
+	Insufficient balance on card	На вашей карте недостаточно средств
+
+1002
+	The card is not found	Карта не найдена
+
+1003
+	Wrong action	Недостаточно прав для осуществление этой операции
+
+1004
+	Send otp is not working	Функция отправки SMS-кода не работает. Пожалуйста попробуйте позже
+
+1005
+	The merchant is not found	Мерчант не найден.
+
+1006
+	The terminal is not tied to the merchant	Мерчант-терминал не найден.
+
+1007
+	The commission is not found	Не найдена установленная комиссия для мерчанта
+
+1008
+	The otp is wrong	Введенный SMS-код не верный
+
+1009
+	It is not possible to perform this 'hold' operation now, please try again later.	Hold метод не работает, попробуйте позже
+
+1010
+	It is not possible to perform this 'confirm' operation now, please try again later.	Функция подтверждение не работает. Пожалуйста попробуйте позже
+
+1011
+	Missing 'method' field in request	Предоставленная информация не полная. Пожалуйста, заполните все поля
+
+1012
+	Missing 'params' field in request	Предоставленная информация не полная. Пожалуйста, заполните все поля
+
+1013
+	The method is unknown	Не известный метод.
+
+1014
+	Something is wrong with request params	Предоставленная информация не полная. Пожалуйста, заполните все поля
+Sum of all vendors amount must be equal to total_amount	Сумма всех вендоров должна быть равна общей сумме
+Some vendor(s) not found	Некоторые вендоры не найдены
+This transaction id already registered our system	Этот идентификатор транзакции уже зарегистрирован в нашей системе
+Transaction id not found	Идентификатор транзакции не найден
+Vendor inns must be unique	ИНН вендоров должны быть уникальными
+Total amount must be positive	—
+
+1015
+	The payment id is wrong or non exist	Идентификатор платежа неверен или не найден
+
+1016
+	This action is closed by admins.	Заблокировано Администратором
+
+1017
+	The account of merchant is not found	Номер счета для мерчанта не найден
+
+1018
+	The cancel time is over	Время отмены истекло
+
+1019
+	Remote service error, try again later	Удаленный сервис не работает
+
+1020
+	Merchant has insufficient balance	Недостаточно средств на балансе мерчанта
+
+1021
+	Card expired	Срок действия карты истек
+
+1022
+	Login or password is wrong	Неверный логин или пароль.
+
+1023
+	Card bin is not found	Бин не найден
+
+1024
+	Card expiry is wrong	Срок действия карты указан неверно.
+
+1025
+	There is no such page with such a limit	Нет такой страницы с таким лимитом
+
+1026
+	Limit is smaller than zero or equal to zero	Лимит меньше нуля или равен нулю
+
+1027
+	We return time in error message. The client will available using methods after this time.	Мы возвращаем время в сообщении об ошибке. По истечении этого времени клиенту снова будет доступен сервис платежа.
+
+1028
+	We return time in error message. The client will available using methods after this time.	Мы возвращаем время в сообщении об ошибке. По истечении этого времени клиенту снова будет доступен сервис платежа.
+
+1029
+	You can send SMS in 1 minute intervals	Повторно запросить SMS-код можно только через 1 минуту.
+
+1030
+	The payment confirmation code has expired. The code is valid for 1 minute.	Срок действия кода подтверждения платежа истек. Код действителен в течение 1 минуты.
+
+1031
+	The time of resend sms is expired	Время повторной отправки SMS истекло.
+
+1032
+	The card already exists in our system	Карта уже существует в нашей системе
+
+1033
+	The card is already verified or verification code is expired	Карта уже верифицирована или срок действия кода подтверждения истек.
+
+1034
+	The card status is not active	Карта не активна
+
+1035
+	This external id exists in db , please check from admin panel	Внешний ключ уже существует в базе данных , пожайлуйста проверьте в админ панели
+
+1036
+	Something went wrong with sms, try again later	Что-то пошло не так с смс, повторите попытку позже
+
+1037
+	Service not found	Сервис не найден
+
+1038
+	Partner returns time out error	Партнер возвращает ошибку тайм-аута
+
+1039
+	Payments registration failed	Регистрация платежей не удалась
+
+1040
+	Fields are required	Параметры fields обязательны
+
+1041
+	Service not tied to merchant	услуга не привязана к мерчанту
+
+1042
+	Service not available for this merchant, please contact the administrator.	Услуга недоступна для этого мерчанта, обратитесь к администратору.
+
+1043
+	Wrong field reference code	неверный код поля
+You can't refund/cancel all amount of payment which is already reversed partial	Вы не можете вернуть/отменить всю сумму платежа, которая уже частично возвращена.
+
+1044
+	Card not tied to merchant	карта не привязана к мерчанту
+
+1045
+	Limit is over	лимит превышен
+
+1047
+	Method is not working,please contact the administrator.	Метод не работает, пожалуйста, свяжитесь с администратором
+
+1048
+	Method not tied to merchant	Метод не привязан к мерчанту
+
+1049
+	Method not available for this merchant, please contact the administrator.	Метод недоступен для данного мерчанта, пожалуйста, свяжитесь с администратором
+
+1050
+	This merchant's account is blocked (kortateka) This merchant's account is blocked (arest) This merchant's account is blocked	Аккаунт этого продавца заблокирован (картотека)
+Аккаунт этого продавца заблокирован (арест)
+Аккаунт этого продавца заблокирован
+
+1051
+	The payment has already been processed via P2P.	Платеж уже был обработан через P2P
+
+1052
+	The card has limited by the bank	Карта ограничена банком
+
+1053
+	Phone number is wrong	номер телефона неверный
+
+1054
+	Card token is expired or card was not verified before	токен карты истёк или карта не была подтверждена ранее.
+
+1055
+	Details not found	данные не найдены.
+
+1056
+	Url is expired	срок действия URL истёк.
+
+1057
+	The session was interrupted, please try again 5 minutes later	Сессия была прервана, пожалуйста, попробуйте снова через 5 минут.
+
+1058
+	An SMS has already been sent. Please try again after 1 minute	SMS уже было отправлено. Пожалуйста, попробуйте снова через 1 минуту.
+RRN already registered	RRN уже зарегистрирован
+
+1059
+	Please check and try again, as the amount you want to pay exceeds the specified amount	Пожалуйста, проверьте и попробуйте снова, так как сумма, которую вы хотите оплатить, превышает указанную сумму.
+
+1060
+	Phe payment was unsuccessful for the provided RRN	оплата по указанному RRN была неуспешной.
+
+1061
+	This method operates for this user during specified time periods	Этот метод работает для этого пользователя в указанные временные периоды
+
+1062
+	Card is not Uzcard	Карта не Uzcard
+
+1063
+	Phone number has cards with same last four characters , please select processing too	Номер телефона имеет карты с одинаковыми последними четырьмя символами, пожалуйста, выберите способ обработки
+
+1064
+	Payment with this external_id already exists in final state	Платёж с этим external_id уже существует в конечном состоянии
+
+1065
+	This card type is not allowed	Этот тип карты не разрешен
+
+1066
+	This method is not allowed for this merchant today	Этот метод не разрешен для этого продавца сегодня
+Коды ошибок методов MUNIS
+
+Коды ошибок, возвращаемые методами оплаты Мунис (pay.service.*).
+
+​
+​
+Error code	Error message	Описание	Методы	Комментарии
+
+1000 / 2000
+	Internal server error	Внутренняя ошибка сервера	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2001
+	Entity not found	Объект не найден	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2002
+	Something is wrong with request params	Некорректные параметры запроса	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2003
+	Service is not available. Please contact the administrator	Сервис недоступен. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2004
+	Service is not available to this merchant. Please contact the administrator	Сервис недоступен для данного мерчанта. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2005
+	Card BIN not found in our system. Please contact the administrator	BIN карты не найден в системе. Пожалуйста, обратитесь к администратору	
+pay.service.payment
+	Отменить платеж
+
+2006
+	Terminal is not tied. Please contact the administrator	Терминал не привязан. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2007
+	Account is not tied. Please contact the administrator	Счёт не привязан. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2008
+	Limit is not tied. Please contact the administrator	Лимит не привязан. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2009
+	Remote connection error. Please contact the administrator	Ошибка удалённого соединения. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2010
+	This account is blocked (kortoteka). Please contact the administrator.
+This account is blocked (arest). Please contact the administrator.
+This account is blocked. Please contact the administrator.	Данный счёт заблокирован: картотека. Пожалуйста, обратитесь к администратору.
+Данный счёт заблокирован: арест. Пожалуйста, обратитесь к администратору.
+Данный счёт заблокирован. Пожалуйста, обратитесь к администратору.	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2011
+	This account has insufficient balance. Please contact the administrator	На данном счёте недостаточно средств. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2012
+	An error occurred during identification. Please contact the administrator	Произошла ошибка при идентификации. Пожалуйста, обратитесь к администратору	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2013
+	An error occurred during payment. Please contact the administrator	Произошла ошибка при проведении платежа. Пожалуйста, обратитесь к администратору	
+pay.service.payment
+	Нужно обращаться администратору для проверки статуса платежа
+
+2014
+	RRN already registered	RRN уже зарегистрирован	
+pay.service.payment
+	Отменить платеж
+
+2015
+	Limit is over. Please contact the administrator	Лимит превышен. Пожалуйста, обратитесь к администратору	
+pay.service.payment
+	Отменить платеж
+
+2016
+	The invoice has already been paid	Инвойс уже оплачен	
+pay.service.info
+pay.service.payment
+	Отменить платеж
+
+2017
+	The specified payment amount is greater than the remaining balance of the invoice	Указанная сумма платежа превышает остаток по инвойсу	
+pay.service.payment
+	Отменить платеж
+
+=== Тестовые карты (https://acq-docs.hamkorbank.uz/acquiring-docs/test-cards) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Тестовые карты
+UzCard
+HUMO
+
+Ниже приведены тестовые карты для проверки платежей в тестовой среде. Нажмите на иконку рядом с номером карты, чтобы скопировать его.
+
+UzCard
+Номер карты	Срок действия	Номер телефона	Статус карты
+
+
+8600 0602 9680 5501
+
+	07/23	+998 90 543 00 93	
+Истек срок карты
+
+
+
+8600 0604 3032 4070
+
+	09/23	+998 90 543 00 93	
+Карта заблокирована
+
+
+
+8600 0604 8853 2897
+
+	09/23	+998 90 543 00 93	
+Действующая активная карта
+
+
+
+8600 1204 8040 9831
+
+	09/23	+998 94 177 58 59	
+Действующая активная карта
+HUMO
+Номер карты	Срок действия	Номер телефона	Статус карты
+
+
+9000 0901 0178 5949
+
+	03/18	
+
+—
+
+	
+
+—
+
+
+
+
+9860 0901 0197 5036
+
+	01/25	
+
+—
+
+	
+
+—
+
+
+
+
+9860 0901 0188 3388
+
+	
+
+—
+
+	
+
+—
+
+	
+
+—
+
+
+
+
+9860 0901 0171 9418
+
+	
+
+—
+
+	
+
+—
+
+	
+
+—
+
+
+
+
+9860 0901 0186 4511
+
+	
+
+—
+
+	
+
+—
+
+	
+
+—
+
+
+
+
+9860 0901 0198 3006
+
+	
+
+—
+
+	
+
+—
+
+	
+
+—
+
+=== Общие сведения (https://acq-docs.hamkorbank.uz/acquiring-docs/sdk) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Общие сведения
+О Hamkor Payment SDK
+Поддерживаемые карты
+Схема взаимодействия систем
+О Hamkor Payment SDK
+
+Hamkor Payment SDK — это библиотека для интеграции платёжной системы Hamkorbank в веб- и мобильные приложения на базе JavaScript/TypeScript- фреймворков для приложений на базе Ionic.
+
+Возможности SDK
+Приём платежей с карт HUMO и UZCARD
+SMS OTP подтверждение платежей
+Поддержка фискализации чеков
+Настраиваемый логотип мерчанта
+Все операции с чувствительными платёжными данными выполняются на стороне Банка. Это обеспечивает высокий уровень безопасности персональных данных, поскольку партнёр не получает и не обрабатывает данные банковских карт.
+
+Использование SDK позволяет реализовать удобный и безопасный сценарий оплаты без перенаправления пользователя во внешний браузер, улучшая пользовательский опыт.
+
+Поддерживаемые карты
+Платёжная система	Префиксы карт
+HUMO	
+9860
+4073
+5555
+4728
+4097
+4008
+4067
+
+UZCARD	
+8600
+6262
+5614
+5440
+Схема взаимодействия систем
+
+=== Техническая инструкция (https://acq-docs.hamkorbank.uz/acquiring-docs/sdk/integration) ===
+ACQUIRING API
+Общая информация
+Авторизация
+Методы
+Callback запрос
+Коды ошибок
+Тестовые карты
+WEB/MOBILE SDK
+Общие сведения
+Техническая инструкция
+Техническая инструкция
+Ключи и доступы
+Шаги интеграции
+Callback запрос
+Ключи и доступы
+
+Банк предоставляет партнёру следующие ключи для интеграции:
+
+key / secret	Секретный ключ, используемый для авторизации серверных (backend) запросов при получении payment_token. Передаётся по защищённому каналу и должен храниться исключительно на стороне партнёра с соблюдением требований безопасности.
+public_key	Публичный ключ, используемый партнёром при взаимодействии с мобильным SDK для инициации платёжных операций.
+Шаги интеграции
+Шаг 1: Инициализация SDK (при старте приложения)
+const sdk = HamkorSDKService.getInstance();
+sdk.initialize('sg4etwWB7o-uZioGJJkd'); // public-key
+sdk.config()
+  .testMode(true)
+  .setModalAutoCloseTimeout(300);
+Шаг 2: Пользователь нажимает кнопку оплаты в приложении мерчанта
+
+Приложение мерчанта инициирует сценарий оплаты через SDK.
+
+Шаг 3: Merchant App запрашивает payment_token у своего бэкенда
+
+URL запроса:
+
+Тест	https://acqt.hamkorbank.uz/api/v1/gate/payment/init
+Прод	https://acq.hamkorbank.uz/api/v1/gate/payment/init
+
+Пример запроса:
+
+{
+  "amount": 1000,
+  "external_id": "ORD-1711440000000",
+  "product_id": "product-id-00000000-0000-4000-8000-000000000000",
+  "callback_url": "callback url",
+  "currency_code": "860",
+  "details": [
+    { "field": "merchant_name", "value": "test-merchant" }
+  ],
+  "fiscal_data": {
+    "tin": "310070597",
+    "vat_percent": 12,
+    "location": { "lat": 41.31, "long": 69.24 },
+    "item": [
+      {
+        "amount": 500,
+        "count": 1,
+        "spic": "08418001001002105",
+        "package_code": "1365020",
+        "labels": ["что-то"]
+      },
+      {
+        "amount": 500,
+        "count": 1,
+        "spic": "08418001001002105",
+        "package_code": "1365020",
+        "labels": ["что-то"]
+      }
+    ]
+  },
+  "payer_data": {
+    "nationality": "UZB",
+    "doc_type": "001",
+    "serial_no": "AA",
+    "id_card": "3339379",
+    "doc_valid_through": "2025-12-31",
+    "person_code": "12345678912345",
+    "surname": "Husanov",
+    "first_name": "Maqsadali",
+    "middle_name": "Muxtoraliyevich",
+    "birth_date": "1993-04-27"
+  }
+}
+
+Пример ответа:
+
+{
+  "payment_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+}
+fiscal_data и payer_data опциональны. amount передаётся в сумах (тийин).
+Шаг 4: Merchant App вызывает sdk.createPayment()
+
+Пример вызова:
+
+const { payment, error } = await sdk.createPayment(paymentToken);
+// payment:
+{
+  id: 'pay_abc123xyz',
+  amount: 1000,
+  currency: 'UZS',
+  externalId: '',
+  status: 'completed',
+  createdAt: Date,
+  extraParams: {
+    card_number: '860012******1234',
+    rrn: '123456789012',
+    state: '14',
+    state_text: 'Оплачено'
+  }
+}
+// error: null
+Шаг 5: Проверка статуса платежа, если callback не получен
+
+В случае если после выполнения платежа callback-запрос не был получен бэкендом мерчанта, бэкенд мерчанта инициирует запрос в Банк для получения актуальной информации о платеже.
+
+URL запроса:
+
+Тест	https://acqt.hamkorbank.uz/api/v1/gate/payment/info
+Прод	https://acq.hamkorbank.uz/api/v1/gate/payment/info
+
+Пример запроса:
+
+{
+  "payment_token": "token"
+}
+
+Пример ответа:
+
+{
+  "created_at": "2026-04-07 14:52:00",
+  "amount": 100000,
+  "state": 1,
+  "card": {
+    "id": "card_123",
+    "number": "860012******1234",
+    "expiry": "12/28"
+  },
+  "details": [
+    {
+      "field": "ticket_id",
+      "value": "12345"
+    }
+  ],
+  "partner_state": 1,
+  "payer_data": {
+    "nationality": "UZ",
+    "doc_type": "passport",
+    "serial_no": "AA",
+    "id_card": "1234567",
+    "doc_valid_through": "2030-01-01",
+    "person_code": "12345678901234",
+    "surname": "Mamajonov",
+    "first_name": "Jasurbek",
+    "middle_name": "X",
+    "birth_date": "1995-05-10"
+  },
+  "rrn": "123456789012",
+  "pay_id": "pay_001",
+  "card_type": "uzcard",
+  "updated_at": "2026-04-07 15:00:00",
+  "clearing": "2026-04-07 15:00:00"
+}
+Callback запрос
+
+После успешного проведения платежа на URL, указанный в параметрах инициализации платежа (для получения payment_token), будет отправлен callback-запрос от платёжной системы в сторону мерчанта, содержащий информацию о статусе и деталях совершённой транзакции.
+
+Пример запроса:
+
+{
+  "url": "https://example.com/callback",
+  "hash": "abc123hash",
+  "external_id": "ext_001",
+  "state": 1,
+  "pay_id": "pay_001",
+  "created_at": "2026-04-07T15:05:00Z",
+  "error": {
+    "code": 0,
+    "message": ""
+  }
+}
+
+
+
+################################################################################
+#              API METODLARI (har bir metod sahifasi to'liq)                   #
+################################################################################
+
+
+=== pay.create (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.create) ===
+Создание платежа
+POST
+
+/acquiring/v1/pay.create
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+amount
+
+required
+
+number
+
+Сумма платежа
+
+currency_code
+
+required
+
+number
+
+Код валюты
+
+card
+
+required
+
+object
+
+Контейнер с набором параметров по карте
+
+id
+
+required
+
+string
+
+Уникальный ID карты.
+
+number
+
+required
+
+string
+
+Номер карты. Обязательно, если оплата производится по номеру карты
+
+expiry
+
+required
+
+string
+
+Срок действия карты. Обязательно, если оплата производится по номеру карты
+
+details
+
+array (of Objects)
+
+Детали (заполняется пользователем, исходя из спецификаций своей системы, в Админ панели пользователя есть функционал поиска по деталям)
+
+field
+
+string
+
+Имя объекта
+
+value
+
+string
+
+Значение объекта
+
+payer_data
+
+object
+
+Контейнер с набором параметров данных плательщика
+
+nationality
+
+string
+
+Национальность плательщика (по умолчанию «UZB», обязательное значение при частичном возврате средств системы HUMO)
+
+doc_type
+
+string
+
+Тип документа («001» – паспорт, «002» - id карта, … )
+
+serial_no
+
+string
+
+Серийный номер документа
+
+id_card
+
+string
+
+Идентификационный номер документа
+
+doc_valid_through
+
+string
+
+Срок действия документа (YYYY-MM-DD)
+
+person_code
+
+string
+
+ПИНФЛ номер плательщика
+
+surname
+
+string
+
+Фамилия плательщика
+
+first_name
+
+string
+
+Имя плательщика
+
+middle_name
+
+string
+
+Отчество плательщика
+
+birth_date
+
+string
+
+Дата рождения плательщика (YYYY-MM-DD)
+
+fiscal_data
+
+object
+
+Контейнер с набором параметров данных для налогов.
+
+item
+
+object
+
+Контейнер с набором параметров данных для налогов
+
+spic
+
+string
+
+Идентификационный код продукции и услуг
+
+tin
+
+string
+
+ИНН комитента
+
+vat_percent
+
+int
+
+Ставка НДС %
+
+package_code
+
+string
+
+Количественное значение
+
+location
+
+object
+
+Геолокация торговой точки
+
+lat
+
+float
+
+Значение широты
+
+long
+
+float
+
+Значение долготы
+
+receiver_data
+
+object
+
+card_id
+
+string
+
+Уникальный ID карты получателя.
+
+external_id
+
+required
+
+string
+
+Внешний идентификатор мерчанта
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.create",
+  "params": [
+    {
+      "amount": 96979000,
+      "card": {
+        "expiry": "0824",
+        "id": "",
+        "number": "8600492955806688"
+      },
+      "currency_code": "860",
+      "details": [
+        {
+          "field": "created_at",
+          "value": "17.07.2024"
+        }
+      ],
+      "external_id": "61",
+      "fiscal_data": {
+        "item": [
+          {
+            "amount": 47980800,
+            "count": 1,
+            "package_code": "21321525",
+            "spic": "02106999028000000"
+          },
+          {
+            "amount": 37993700,
+            "count": 1,
+            "package_code": "3121515",
+            "spic": "02106999028000000"
+          },
+          {
+            "amount": 11004500,
+            "count": 1,
+            "package_code": "5234637",
+            "spic": "02106999028000000"
+          }
+        ],
+        "location": {
+          "lat": 41.31,
+          "long": 69.24
+        },
+        "tin": "310070597",
+        "vat_percent": 12
+      }
+    }
+  ],
+  "id": "12155231-19e6-4de8-9983-5653a6844772"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+string
+
+Номер платежной операции (hamkor)
+
+confirm_method
+
+string
+
+Способ подтверждения платежа (SMS/NONE) Если для confirm_code указано «SMS», то вы подтвердите платеж по sms code, если «NONE» платеж будет считаться подтвержденным.
+
+fee_amount
+
+string
+
+Комиссия
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "a7a0739c-5dd1-4688-a289-aa3dc2416822",
+    "confirm_method": "SMS",
+    "fee_amount": 0
+  },
+  "id": "765d0d2b-8425-4653-9978-be926c662eec"
+}
+
+=== pay.confirm (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.confirm) ===
+Подтверждение платежа
+POST
+
+/acquiring/v1/pay.confirm
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+confirm_code
+
+required
+
+string
+
+SMS-код, отправленный на телефон пользователя
+
+hold
+
+boolean
+
+Условия подтверждения платежа мерчантом («true» - происходит удержание средств до подтверждения оплаты с помощью метода [pay.confirmHold], «false» - платеж будет подтвержден автоматически сервисом)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.confirm",
+  "params": [
+    {
+      "pay_id": "848482a8-9d7b-40ec-895a-e92972cad5e2",
+      "confirm_code": "266666",
+      "hold": true
+    }
+  ],
+  "id": "86f922a8-9d7b-40ec-895a-e92972cad5e2"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+external_id
+
+string
+
+Внешний идентификатор мерчанта
+
+state
+
+string
+
+Статус платежа: «1» – create - создан «2» – holded - удержан «3» – confirmed - подтвержден «4» – canceled - отменен «5» – returned - возвращен
+
+card
+
+object
+
+Контейнер с набором параметров по карте
+
+id
+
+string
+
+Уникальный ID карты. Обязательно, если оплата производится по номеру телефона
+
+number
+
+string
+
+Номер карты. Обязательно, если оплата производится по номеру карты
+
+details
+
+array (of Objects)
+
+Детали (заполняется пользователем, исходя из спецификаций своей системы, в Админ панели пользователя есть функционал поиска по деталям)
+
+field
+
+string
+
+Имя объекта
+
+value
+
+string
+
+Значение объекта
+
+payer_data
+
+object
+
+Контейнер с набором параметров данных плательщика
+
+nationality
+
+string
+
+Национальность плательщика (по умолчанию «UZB», обязательное значение при частичном возврате средств системы HUMO)
+
+doc_type
+
+string
+
+Тип документа («001» – паспорт, «002» - id карта, … )
+
+serial_no
+
+string
+
+Серийный номер документа
+
+id_card
+
+string
+
+Идентификационный номер документа
+
+doc_valid_through
+
+string
+
+Срок действия документа (YYYY-MM-DD)
+
+person_code
+
+string
+
+ПИНФЛ номер плательщика
+
+surname
+
+string
+
+Фамилия плательщика
+
+first_name
+
+string
+
+Имя плательщика
+
+middle_name
+
+string
+
+Отчество плательщика
+
+birth_date
+
+string
+
+Дата рождения плательщика (YYYY-MM-DD)
+
+rrn
+
+string
+
+Уникальный номер транзакции
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "card": {
+      "id": "986009KADYAI0000",
+      "number": "9860 **** **** 0000"
+    },
+    "external_id": "12345627980",
+    "state": "2",
+    "details": [
+      {
+        "field": "created_at",
+        "value": "10.04.2023"
+      },
+      {
+        "field": "ticket_id",
+        "value": "12346"
+      }
+    ],
+    "payer_data": {
+      "nationality": "UZB",
+      "doc_type": "001",
+      "serial_no": "AA",
+      "id_card": "123456",
+      "doc_valid_through": "2023-12-31",
+      "person_code": "12345678912345",
+      "surname": "surname",
+      "first_name": "first name",
+      "middle_name": "middle name",
+      "birth_date": "1987-04-27",
+      "rrn": "1482661698"
+    }
+  },
+  "id": "86f922a8-9d7b-40ec-895a-e92972cad5e2"
+}
+
+=== pay.confirmHold (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.confirmHold) ===
+Подтверждение холдированного платежа
+POST
+
+/acquiring/v1/pay.confirmHold
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.confirmHold",
+  "params": [
+    {
+      "pay_id": "111922a8-9d7b-40ec-895a-e92972cad5e2"
+    }
+  ],
+  "id": "86f922a8-9d7b-40ec-895a-e92972cad5e2"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+state
+
+string
+
+Статус платежа: «1» – create – создан «2» – holded – холдирован «3» – confirmed – подтвержден «4» – canceled – отменен «5» – returned – возвращен
+
+card
+
+object
+
+Контейнер с набором параметров
+
+id
+
+string
+
+Уникальный ID карты. Обязательно, если оплата производится по номеру телефона
+
+number
+
+string
+
+Номер карты. Обязательно, если оплата производится по номеру карты
+
+details
+
+array (of Objects)
+
+Детали (заполняется пользователем, исходя из спецификаций своей системы, в Админ панели пользователя есть функционал поиска по деталям)
+
+field
+
+string
+
+Имя объекта
+
+value
+
+string
+
+Значение объекта
+
+payer_data
+
+string
+
+Контейнер с набором параметров данных плательщика
+
+nationality
+
+string
+
+Национальность плательщика (по умолчанию «UZB», обязательное значение при частичном возврате средств системы HUMO)
+
+doc_type
+
+string
+
+Тип документа («001» – паспорт, «002» - id карта, … )
+
+serial_no
+
+string
+
+Серийный номер документа
+
+id_card
+
+string
+
+Идентификационный номер документа
+
+doc_valid_through
+
+string
+
+Срок действия документа (YYYY-MM-DD)
+
+person_code
+
+string
+
+ПИНФЛ номер плательщика
+
+surname
+
+string
+
+Фамилия плательщика
+
+first_name
+
+string
+
+Имя плательщика
+
+middle_name
+
+string
+
+Отчество плательщика
+
+birth_date
+
+string
+
+Дата рождения плательщика (YYYY-MM-DD)
+
+Rrn
+
+string
+
+Уникальный номер транзакции
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "card": {
+      "id": "986009KADYAI0000",
+      "number": "9860 **** **** 0000"
+    },
+    "state": 3,
+    "details": [
+      {
+        "field": "created_at",
+        "value": "10.04.2023"
+      },
+      {
+        "field": "ticket_id",
+        "value": "12346"
+      }
+    ],
+    "payer_data": {
+      "nationality": "UZB",
+      "doc_type": "001",
+      "serial_no": "AA",
+      "id_card": "123456",
+      "doc_valid_through": "2023-12-31",
+      "person_code": "12345678912345",
+      "surname": "surname",
+      "first_name": "first name",
+      "middle_name": "middle name",
+      "birth_date": "1987-04-27",
+      "rrn": "1482661698"
+    }
+  },
+  "id": "8cca19ad-cdf8-420a-96ab-8ef52358dfe4"
+}
+
+=== pay.cancel (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.cancel) ===
+Отмена платежа
+POST
+
+/acquiring/v1/pay.cancel
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.cancel",
+  "params": [
+    {
+      "pay_id": "5555bae3-c564-41ff-b4fa-d2c5f0d49075"
+    }
+  ],
+  "id": "d7dcbae3-c564-41ff-b4fa-d2c5f0d49075"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+string
+
+Номер платежной операции (hamkor)
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "3395d636-945c-4d61-9b8c-f4d6d167f547"
+  },
+  "id": "d6f02db9-8ddd-4253-ab0f-9c670c87164a"
+}
+
+=== pay.cancelPartial (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.cancelPartial) ===
+Частичный возврат средств
+POST
+
+/acquiring/v1/pay.cancelPartial
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+amount
+
+required
+
+number
+
+Сумма возврата
+
+details
+
+array (of Objects)
+
+Детали (заполняется пользователем, исходя из спецификаций своей системы, в Админ панели пользователя есть функционал поиска по деталям)
+
+field
+
+string
+
+Имя объекта
+
+value
+
+string
+
+Значение объекта
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.cancelPartial",
+  "params": [
+    {
+      "pay_id": "88652db9-8ddd-4253-ab0f-9c670c87164a",
+      "amount": 500,
+      "details": [
+        {
+          "field": "created_at",
+          "value": "10.04.2023"
+        },
+        {
+          "field": "ticket_id",
+          "value": "12346"
+        }
+      ]
+    }
+  ],
+  "id": "d6f02db9-8ddd-4253-ab0f-9c670c87164a"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+string
+
+ID платежной операции (hamkor)
+
+child_pay_id
+
+string
+
+Возврат ID
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "88652db9-8ddd-4253-ab0f-9c670c87164a",
+    "child_pay_id": "231ecdc7-6e59-4b51-b7d2-28f2114bd369"
+  },
+  "id": "d6f02db9-8ddd-4253-ab0f-9c670c87164a"
+}
+
+=== pay.get (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.get) ===
+Получение информации о платеже
+POST
+
+/acquiring/v1/pay.get
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.get",
+  "params": [
+    {
+      "pay_id": "224519ad-cdf8-420a-96ab-8ef52358dfe4"
+    }
+  ],
+  "id": "8cca19ad-cdf8-420a-96ab-8ef52358dfe4"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+create_at
+
+string
+
+Информация о создании платежа (дата и время)
+
+amount
+
+int
+
+Сумма платежа
+
+state
+
+int
+
+Статус платежа: «1» – create – создан «2» – holded – холдирован «3» – confirmed – подтвержден «4» – canceled – отменен «5» – returned – возвращен
+
+card
+
+object
+
+Контейнер с набором параметров
+
+id
+
+string
+
+Уникальный ID карты. Обязательно, если оплата производится по номеру телефона
+
+number
+
+string
+
+Номер карты. Обязательно, если оплата производится по номеру карты
+
+details
+
+array (of Objects)
+
+Детали (заполняется пользователем, исходя из спецификаций своей системы, в Админ панели пользователя есть функционал поиска по деталям)
+
+field
+
+string
+
+Имя объекта
+
+value
+
+string
+
+Значение объекта
+
+payer_data
+
+object
+
+Контейнер с набором параметров данных плательщика
+
+nationality
+
+string
+
+Национальность плательщика (по умолчанию «UZB», обязательное значение при частичном возврате средств системы HUMO)
+
+doc_type
+
+string
+
+Тип документа («001» – паспорт, «002» - id карта, … )
+
+serial_no
+
+string
+
+Серийный номер документа
+
+id_card
+
+string
+
+Идентификационный номер документа
+
+doc_valid_through
+
+string
+
+Срок действия документа (YYYY-MM-DD)
+
+person_code
+
+string
+
+ПИНФЛ номер плательщика
+
+surname
+
+string
+
+Фамилия плательщика
+
+first_name
+
+string
+
+Имя плательщика
+
+middle_name
+
+string
+
+Отчество плательщика
+
+birth_date
+
+string
+
+Дата рождения плательщика (YYYY-MM-DD)
+
+Rrn
+
+string
+
+Уникальный номер транзакции
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "create_at": "2023-05-26T03:28:37.215379Z",
+    "state": 3,
+    "card": {
+      "id": "986009KADYAI5396",
+      "number": "9860 **** **** 5396"
+    },
+    "details": [
+      {
+        "field": "created_at",
+        "value": "10.04.2023"
+      },
+      {
+        "field": "ticket_id",
+        "value": "12346"
+      },
+      {
+        "field": "terminal_id",
+        "value": "EZ000000000332"
+      },
+      {
+        "field": "fiscal_sign",
+        "value": "232002245134"
+      },
+      {
+        "field": "qr_code_url",
+        "value": "https://ofd.soliq.uz/epit=EZ000000000332&r=7467&c=20231115164704&s=232002245134"
+      },
+      {
+        "field": "receipt_id",
+        "value": "7467"
+      },
+      {
+        "field": "date_time",
+        "value": "20231115164704"
+      }
+    ],
+    "payer_data": {
+      "nationality": "UZB",
+      "doc_type": "001",
+      "serial_no": "AA",
+      "id_card": "123456",
+      "doc_valid_through": "2023-12-31",
+      "person_code": "12345678912345",
+      "surname": "surname",
+      "first_name": "first name",
+      "middle_name": "middle name",
+      "birth_date": "1987-04-27",
+      "rrn": "1482661698"
+    }
+  },
+  "id": "d7dcbae3-c564-41ff-b4fa-d2c5f0d49075"
+}
+
+=== pay.get.ext (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.get.ext) ===
+Получение информации о платеже по external_id
+POST
+
+/acquiring/v1/pay.get.ext
+
+Нет данных.
+
+=== pay.create.url (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.create.url) ===
+Создание платежной ссылки (счета на оплату)
+POST
+
+/acquiring/v1/pay.create.url
+
+Нет данных.
+
+=== pay.get.inv (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.get.inv) ===
+Получение информации о счете на оплату
+POST
+
+/acquiring/v1/pay.get.inv
+
+Нет данных.
+
+=== sms.resend (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/sms.resend) ===
+Повторная отправка SMS-кода
+POST
+
+/acquiring/v1/sms.resend
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+string
+
+Номер платежной операции (hamkor)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "sms.resend",
+  "params": [
+    {
+      "pay_id": "5555bae3-c564-41ff-b4fa-d2c5f0d49075"
+    }
+  ],
+  "id": "d7dcbae3-c564-41ff-b4fa-d2c5f0d49075"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+result
+
+string
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "result": "success"
+  },
+  "id": "d6f02db9-8ddd-4253-ab0f-9c670c87164a"
+}
+
+=== pay.a2c (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.a2c) ===
+Выплата средств на карту
+POST
+
+/acquiring/v1/pay.a2c
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+ext_id
+
+required
+
+string
+
+Внешний идентификатор мерчанта . Идентификатор должен быть уникальным
+
+amount
+
+required
+
+number
+
+Сумма платежа в копейках
+
+card
+
+required
+
+object
+
+Контейнер с набором параметров по карте
+
+id
+
+required
+
+string
+
+Уникальный ID карты. Обязательно, если оплата производится по номеру телефона
+
+number
+
+required
+
+string
+
+Номер карты. Обязательно, если оплата производится по номеру карты
+
+payer_data
+
+object
+
+Контейнер с набором параметров данных плательщика
+
+surname
+
+required
+
+string
+
+Фамилия плательщика
+
+first_name
+
+required
+
+string
+
+Имя плательщика
+
+middle_name
+
+required
+
+string
+
+Отчество плательщика
+
+nationality
+
+required
+
+string
+
+Национальность плательщика (по умолчанию «UZB», обязательное значение если сумма платежа превышает 10 млн сум)
+
+doc_type
+
+required
+
+string
+
+Тип документа («001» – паспорт, «002» - id карта, … ) , обязательное значение если сумма платежа превышает 10 млн сум
+
+serial_no
+
+required
+
+string
+
+Серийный номер документа , обязательное значение если сумма платежа превышает 10 млн сум
+
+id_card
+
+required
+
+string
+
+Идентификационный номер документа , обязательное значение если сумма платежа превышает 10 млн сум
+
+doc_valid_through
+
+required
+
+string
+
+Срок действия документа (YYYY-MM-DD) , обязательное значение если сумма платежа превышает 10 млн сум
+
+person_code
+
+required
+
+string
+
+ПИНФЛ номер плательщика , обязательное значение если сумма платежа превышает 10 млн сум
+
+birth_date
+
+required
+
+string
+
+Дата рождения плательщика (YYYY-MM-DD) , обязательное значение если сумма платежа превышает 10 млн сум
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.a2c",
+  "params": [
+    {
+      "ext_id": "13215646468",
+      "amount": 10000,
+      "card": {
+        "id": "",
+        "number": "8600 **** **** 9831"
+      },
+      "payer_data": {
+        "nationality": "UZB",
+        "doc_type": "001",
+        "serial_no": "AA",
+        "id_card": "123456",
+        "doc_valid_through": "2023-12-31",
+        "person_code": "12345678912345",
+        "surname": "surname",
+        "first_name": "first name",
+        "middle_name": "middle name",
+        "birth_date": "1987-04-27"
+      }
+    }
+  ],
+  "id": "da818634-5a98-4939-9f5b-6798a67ff2dc"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+string
+
+Номер платежной операции (hamkor)
+
+state
+
+string
+
+Статус платежа
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "612582cc-e90e-4f65-89c6-8d5b56c0ae9c",
+    "state": 5
+  },
+  "id": "987682cc-e90e-4f65-89c6-8d5b56c0ae9c"
+}
+
+=== pay.a2c.aml (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.a2c.aml) ===
+Выплата средств на карту с проверкой по черному списку
+POST
+
+/acquiring/v1/pay.a2c.aml
+
+Нет данных.
+
+=== pay.p2p.credit (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.p2p.credit) ===
+Списание холдированных средств и зачисление получателю
+POST
+
+/acquiring/v1/pay.p2p.credit
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_ids
+
+required
+
+Array string
+
+Массив id холдированных платежей
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.p2p.credit",
+  "params": [
+    {
+      "pay_ids": [
+        "43924a1b-f2da-4a8a-8d07-590918b97a24"
+      ]
+    }
+  ],
+  "id": "beac0986-0359-4032-81a9-633b295f4e3b"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+string
+
+Номер платежной операции (hamkor)
+
+state
+
+string
+
+Статус платежа
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "92ba05cc-4152-405f-94d9-fd2f40d44aaa",
+    "state": 5
+  },
+  "id": "851d4366-a873-4e55-bcd1-c4c2e8a4528c"
+}
+
+=== card.list (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/card.list) ===
+Получение списка карт пользователя
+POST
+
+/acquiring/v1/card.list
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+phone
+
+required
+
+string
+
+Номер телефона пользователя (длина 12)
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "card.list",
+  "params": [
+    {
+      "phone": "99890543****"
+    }
+  ],
+  "id": "c7cc13bd-fc91-4c0a-9a30-a8cedb2c1514"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+cards
+
+array (of Objects)
+
+Контейнер с набором параметров по карте
+
+card_id
+
+string
+
+Уникальный ID карты.
+
+masked_pan
+
+string
+
+Маскированный номер карты
+
+expiry
+
+string
+
+Срок действия карты
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "cards": [
+      {
+        "card_id": "4E6E2A4BCAF24955BBA4A05D79A5034C",
+        "masked_pan": "8600 **** **** 0318",
+        "expiry": "1249"
+      },
+      {
+        "card_id": "986009LOYMNV3388",
+        "masked_pan": "9860 **** **** 3388",
+        "expiry": "1412"
+      }
+    ]
+  },
+  "id": "32903f2d-bc63-40a9-8658-b8ad0d241c6a"
+}
+
+=== card.create (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/card.create) ===
+Добавление карты
+POST
+
+/acquiring/v1/card.create
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+number
+
+required
+
+string
+
+Номер карты
+
+expiry
+
+required
+
+string
+
+Срок действия карты
+
+phone
+
+required
+
+string
+
+Телефон номер держателя карты
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "card.create",
+  "params": [
+    {
+      "number": "8600120480409831",
+      "expiry": "0923",
+      "phone": "+998991234567"
+    }
+  ],
+  "id": "d6f02db9-8ddd-4253-ab0f-9c670c87164a"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+number
+
+string
+
+Номер карты
+
+expiry
+
+string
+
+Срок действия карты
+
+key
+
+string
+
+Ключ подтверждения карты
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "number": "8600 **** **** 9831",
+    "expiry": "0923",
+    "key": "b85fc616-866a-448e-99ef-49a5e8808ec8"
+  },
+  "id": "91885200-b4cd-4e41-9aaf-fb7b00b5afbf"
+}
+
+=== card.verify (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/card.verify) ===
+Подтверждение карты
+POST
+
+/acquiring/v1/card.verify
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+key
+
+required
+
+string
+
+Ключ подтверждения карты
+
+confirm_code
+
+required
+
+string
+
+SMS-код(OTP), отправленный на телефон пользователя
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "card.verify",
+  "params": [
+    {
+      "key": "b85fc616-866a-448e-99ef-49a5e8808ec8",
+      "confirm_code": "123321"
+    }
+  ],
+  "id": "91885200-b4cd-4e41-9aaf-fb7b00b5afbf"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+id
+
+string
+
+Уникальный ID карты
+
+number
+
+string
+
+Номер карты
+
+expiry
+
+string
+
+Срок действия карты
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "id": "3BBC25A205974E68A9709BB5936D6761",
+    "number": "8600 **** **** 9831",
+    "expiry": "0923"
+  },
+  "id": "16242935-d9a4-487a-947f-e3d2ad113d61"
+}
+
+=== card.info (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/card.info) ===
+Получение информации по карте
+POST
+
+/acquiring/v1/card.info
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+card_id
+
+required
+
+string
+
+Уникальный ID карты.
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "card.info",
+  "params": [
+    {
+      "card_id": "3BBC25A205974E68A9709BB5936D6761"
+    }
+  ],
+  "id": "16242935-d9a4-487a-947f-e3d2ad113d61"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+number
+
+string
+
+Номер карты
+
+expiry
+
+string
+
+Срок действия карты
+
+balance
+
+number
+
+Баланс карту
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "number": "8600 **** **** 9831",
+    "expiry": "0923",
+    "balance": 22550981646
+  },
+  "id": "da818634-5a98-4939-9f5b-6798a67ff2dc"
+}
+
+=== card.check.balance (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/card.check.balance) ===
+Проверка баланса карты
+POST
+
+/acquiring/v1/card.check.balance
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+card_id
+
+required
+
+string
+
+Уникальный ID карты.
+
+amount
+
+required
+
+int
+
+Сумма.
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "card.info",
+  "params": [
+    {
+      "card_id": "3BBC25A205974E68A9709BB5936D6761",
+      "amount": 1935134133177
+    }
+  ],
+  "id": "16242935-d9a4-487a-947f-e3d2ad113d61"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+response
+
+int
+
+возвращает 1 или 0, 0 означает, что вы не можете продолжить процесс, а 1 — что вы можете.
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "response": 1
+  },
+  "id": "da818634-5a98-4939-9f5b-6798a67ff2dc"
+}
+
+=== account.history (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/account.history) ===
+Получение истории счета
+POST
+
+/acquiring/v1/account.history
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+account_id
+
+required
+
+string
+
+id счетa
+
+begin_date
+
+required
+
+string
+
+время начала
+
+end_date
+
+required
+
+string
+
+время окончания
+
+type
+
+required
+
+int
+
+1-debit , 4-credit , 0-общее
+
+page
+
+required
+
+int
+
+Номер страницы данных
+
+page_size
+
+required
+
+int
+
+Размер страницы данных
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "account.history",
+  "params": [
+    {
+      "account_id": "33793734",
+      "begin_date": "2023-01-24T03:00:01",
+      "end_date": "2023-01-24T05:00:01",
+      "page": 4,
+      "page_size": 30,
+      "type": 0
+    }
+  ],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+date
+
+string
+
+дата транзакция
+
+dt_acc
+
+string
+
+дебет счёт-счёт отправителя
+
+dt_acc_name
+
+string
+
+наименование отправителя
+
+dtmfo
+
+string
+
+МФО отправителя
+
+purpose
+
+string
+
+назначение платежа
+
+debit
+
+string
+
+дебет операция
+
+credit
+
+string
+
+кредит операция
+
+number_trans
+
+string
+
+номер трназакция
+
+type
+
+string
+
+кредит счёт-счёт получателя
+
+ct_acc
+
+string
+
+кредит счёт-счёт получателя
+
+ct_acc_name
+
+string
+
+наименование получателя
+
+ct_mfo
+
+string
+
+МФО получателя
+
+ct_inn
+
+string
+
+ИНН получателя
+
+dt_inn
+
+string
+
+ИНН отправителя
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "date": "31.08.2023",
+      "dt_acc": "30318000800000083101",
+      "dt_acc_name": "Чикарилган устав капитали оддий (24-чикарилув)",
+      "dtmfo": "00083",
+      "purpose": "2023 йил 31 август кунги 1301/127 - сонли фармойиш 1-иловасига асосан амалиёт бажарилди",
+      "debit": "0",
+      "credit": "31365000000",
+      "number_trans": "5203819134",
+      "type": "4",
+      "ct_acc": "30318000100000083007",
+      "ct_acc_name": "Голландия Тараккиёт Банки (ФМО)",
+      "ct_mfo": "00083"
+    },
+    {
+      "date": "26.02.2024",
+      "dt_acc": "30318000000000083102",
+      "dt_acc_name": "Чикарилган устав капитали оддий (25-чикарилув)",
+      "dtmfo": "00083",
+      "purpose": "23.02.2024 кунги 1301/35 фар. ас. Марказий депозитариянинг 11.02.2024 йил кунги реестрига асосан бух-я амалиёти бажарилди.",
+      "debit": "0",
+      "credit": "47047500000",
+      "number_trans": "6016663176",
+      "type": "4",
+      "ct_acc": "30318000100000083007",
+      "ct_acc_name": "Голландия Тараккиёт Банки (ФМО)",
+      "ct_mfo": "00083"
+    }
+  ],
+  "id": "12241fae-f0e0-48a1-8249-a26c57fee73f"
+}
+
+=== account.info (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/account.info) ===
+Получение информации о счете
+POST
+
+/acquiring/v1/account.info
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+clearing_date
+
+required
+
+string
+
+Дата клиринга
+
+page
+
+required
+
+int
+
+Номер страницы данных
+
+page_size
+
+required
+
+int
+
+Размер страницы данных
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "account.info",
+  "params": [
+    {
+      "clearing_date": "24.01.2025",
+      "page": 1,
+      "page_size": 30
+    }
+  ],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+amount
+
+int64
+
+Сумма платежа
+
+rrn
+
+string
+
+Уникальный код транзакции (RRN)
+
+pay_purpose
+
+string
+
+Назначение платежа
+
+clearing_date
+
+string
+
+Дата клиринга
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "amount": 7700000,
+      "rrn": "1482661698",
+      "pay_purpose": "00668 00634 Возврат билет~01.05.2023 10-27-23 ~77000 сум~72835244324072, 72885244324083~на карту~9860**0186~RRN=1482661698",
+      "clearing_date": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "id": "e75c4141-9632-4ad2-80a2-245f3e229f42"
+}
+
+=== merchant.balance (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/merchant.balance) ===
+Получение баланса счета мерчанта
+POST
+
+/acquiring/v1/merchant.balance
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "merchant.balance",
+  "params": [],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+balance
+
+int
+
+баланс счета
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "code": "23504000800011451207",
+      "balance": 0
+    },
+    {
+      "code": "22640000000000083777",
+      "balance": 11978800627
+    }
+  ],
+  "id": "8481fcfd-f64c-463d-85a9-c5efe66436bd"
+}
+
+=== tran.separation (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/tran.separation) ===
+Разделение суммы транзакции
+POST
+
+/acquiring/v1/tran.separation
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+transaction_id
+
+required
+
+string
+
+id транзакции
+
+total_amount
+
+required
+
+int
+
+время начала
+
+vendors
+
+required
+
+[]struct{}
+
+время окончания
+
+product_id
+
+required
+
+string
+
+id продукта
+
+vendor_id
+
+required
+
+string
+
+ид вендора
+
+amount
+
+required
+
+int
+
+сумма
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "tran.separation",
+  "params": [
+    {
+      "transaction_id": "unique_id",
+      "total_amount": 800000,
+      "pay_purpose": "purpose",
+      "vendors": [
+        {
+          "product_id": "product_id4",
+          "vendor_id": "7375797a-cfbf-494b-8bf9-4f9528266347",
+          "amount": 400000
+        },
+        {
+          "product_id": "product_id5",
+          "vendor_id": "ec90668e-e6ab-4422-9fcf-0c765840ee40",
+          "amount": 400000
+        }
+      ]
+    }
+  ],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+message
+
+string
+
+Сообщения
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "message": "success"
+  },
+  "id": "f6c5744c-6f29-426d-ac57-a5646b425a86"
+}
+
+=== tran.check (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/tran.check) ===
+Проверка статуса транзакции
+POST
+
+/acquiring/v1/tran.check
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+transaction_id
+
+required
+
+string
+
+id транзакции
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "transaction_id": "fastest"
+  },
+  "id": "f6c5744c-6f29-426d-ac57-a5646b425a86"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+message
+
+string
+
+Сообщения
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "message": "active"
+  },
+  "id": "f6c5744c-6f29-426d-ac57-a5646b425a86"
+}
+
+=== tran.vendors (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/tran.vendors) ===
+Получение списка вендоров
+POST
+
+/acquiring/v1/tran.vendors
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "tran.vendors",
+  "params": [],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+result
+
+[]struct{}
+
+результат
+
+id
+
+string
+
+ид вендора
+
+shxr
+
+string
+
+шхр вендора
+
+account
+
+struct{}
+
+аккаунт вендора
+
+code
+
+string
+
+счёт аккаунта
+
+name
+
+string
+
+наименование аккаунта
+
+tax
+
+string
+
+такс аккаунта
+
+acc_type
+
+string
+
+тип аккаунта
+
+mfo
+
+string
+
+код филиала
+
+inn
+
+string
+
+инн аккаунта
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "id": "09a36a8c-3225-4426-bedb-f2de425a72d2",
+      "account": {
+        "code": "9503",
+        "name": "updated name",
+        "tax": "o",
+        "acc_type": 0,
+        "mfo": "950",
+        "inn": "678"
+      },
+      "shxr": ""
+    },
+    {
+      "id": "ec90668e-e6ab-4422-9fcf-0c765840ee40",
+      "account": {
+        "code": "29896000904305299001",
+        "name": "payloov_vendor_1",
+        "tax": "o",
+        "acc_type": 0,
+        "mfo": "00083",
+        "inn": "204840086"
+      },
+      "shxr": ""
+    }
+  ],
+  "id": "7a9532ab-543b-4de3-bdbd-bda22606a733"
+}
+
+=== pay.services (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.services) ===
+Получение каталога услуг
+POST
+
+/acquiring/v1/pay.services
+
+Нет данных.
+
+=== pay.service.prepare (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.prepare) ===
+Подготовка к оплате
+POST
+
+/acquiring/v1/pay.service.prepare
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+service_id
+
+required
+
+int
+
+Идентификатор службы провайдера, т. е. идентификатор таблицы provider_services.
+
+card_id
+
+required
+
+string
+
+Уникальный идентификатор карты.
+
+amount
+
+required
+
+int
+
+Сумма платежа
+
+external_id
+
+required
+
+string
+
+Уникал платежа клиента
+
+fields
+
+required
+
+[]struct{ “key“:”value”, }
+
+Уникальный номер штрафа("customer_type":"INVOICE")
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.service.prepare",
+  "params": [
+    {
+      "service_id": 1,
+      "amount": 123,
+      "card_id": "986009TKZYSF1322",
+      "external_id": "merchant_ext_id",
+      "fields": [
+        {
+          "key": "acq-0206_01_1",
+          "value": "RA24864040520"
+        }
+      ]
+    }
+  ],
+  "id": "6e6333cc-e925-491e-8d26-32e6d4b577c5"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+uuid
+
+идентификатор таблицы платежей.
+
+fields
+
+[]struct{}
+
+Дополнительные информации
+
+key
+
+string
+
+value
+
+string
+
+state
+
+int
+
+Статус платежа.
+
+fee_amount
+
+float
+
+Стоимость комиссии.
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "34849deb-44ef-40af-a7c4-642b5c97f979",
+    "fields": [
+      {
+        "key": "DAN2CAR",
+        "value": " "
+      },
+      {
+        "key": "FIO",
+        "value": "KARIMOV XUSANBOY XUDAYBERDIYEVICH (13.05.1962)"
+      },
+      {
+        "key": "ADDRESS",
+        "value": "МАР?АЮЗ МФЙ, БЕШБОЛА КЎЧАСИ, uy:12"
+      },
+      {
+        "key": "NDATE",
+        "value": " "
+      },
+      {
+        "key": "NTYPE",
+        "value": "ТЕЗЛИКНИ ОШИРИШ (20 КМ-ДАН КУП БУЛМАГАН)"
+      },
+      {
+        "key": "AMOUNT",
+        "value": "170000,00"
+      },
+      {
+        "key": "BUDGET_INCOME",
+        "value": "4014228608032273430174179"
+      }
+    ],
+    "state": 1,
+    "fee_amount": 0
+  },
+  "id": "42232f88-2cc2-408a-b98c-bc9551a293a0"
+}
+
+=== pay.service.confirm (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.confirm) ===
+Подтверждение платежа
+POST
+
+/acquiring/v1/pay.service.confirm
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+pay_id
+
+required
+
+uuid
+
+Уникал платежа
+
+fields
+
+[]struct{“key“:”value”}
+
+Дополнительные информации
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.service.confirm",
+  "params": [
+    {
+      "pay_id": "8d749854-8fbc-4cae-a97d-f8a8dcb45dbd",
+      "fields": [
+        {
+          "key": "",
+          "value": ""
+        }
+      ]
+    }
+  ],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+uuid
+
+идентификатор таблицы платежей.
+
+state
+
+int
+
+Статус платежа.
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "34849deb-44ef-40af-a7c4-642b5c97f979",
+    "state": 3
+  },
+  "id": "8fb268ec-04ec-4e58-a23e-b59e9418328d"
+}
+
+=== pay.service.payment.epos (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.payment.epos) ===
+Одноэтапная оплата через EPOS
+POST
+
+/acquiring/v1/pay.service.payment.epos
+
+Нет данных.
+
+=== pay.service.info (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.info) ===
+Получение информации об инвойсе
+POST
+
+/acquiring/v1/pay.service.info
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+service_id
+
+required
+
+string
+
+Идентификатор службы провайдера, т. е. идентификатор таблицы provider_services.
+
+fields
+
+required
+
+[]struct{ “key“:”value”,}
+
+Уникальный номер шртафа (“customer_type”:”INVOICE”).
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.service.info",
+  "params": [
+    {
+      "service_id": 1,
+      "fields": [
+        {
+          "key": "INVOICE",
+          "value": "33629627249083"
+        }
+      ]
+    }
+  ],
+  "id": "{{$guid}}"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+service_id
+
+string
+
+Идентификатор службы провайдера, т. е. идентификатор таблицы provider_services.
+
+fields
+
+[]struct{ “key“:”value”,}
+
+Уникальный номер шртафа (“customer_type”:”INVOICE”).
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "service_id": 1,
+    "fields": [
+      {
+        "key": "DAN2CAR",
+        "value": " "
+      },
+      {
+        "key": "FIO",
+        "value": "KARIMOV XUSANBOY XUDAYBERDIYEVICH (13.05.1962)"
+      },
+      {
+        "key": "ADDRESS",
+        "value": "МАР?АЮЗ МФЙ, БЕШБОЛА КЎЧАСИ, uy:12"
+      },
+      {
+        "key": "NDATE",
+        "value": " "
+      },
+      {
+        "key": "NTYPE",
+        "value": "ТЕЗЛИКНИ ОШИРИШ (20 КМ-ДАН КУП БУЛМАГАН)"
+      },
+      {
+        "key": "AMOUNT",
+        "value": "170000,00"
+      },
+      {
+        "key": "BUDGET_INCOME",
+        "value": "4014228608032273430174179"
+      }
+    ]
+  },
+  "id": "0efa7672-c878-49fe-a513-a2d2c2ecb101"
+}
+
+=== pay.service.payment (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.payment) ===
+Оплата без EPOS
+POST
+
+/acquiring/v1/pay.service.payment
+
+ПАРАМЕТРЫ ЗАПРОСА:
+application/json
+
+required
+
+service_id
+
+required
+
+int
+
+Идентификатор службы провайдера, т. е. идентификатор таблицы provider_services.
+
+card_id
+
+required
+
+string
+
+Уникальный идентификатор карты.
+
+amount
+
+required
+
+int
+
+Сумма платежа
+
+external_id
+
+required
+
+string
+
+Уникал платежа килента
+
+fields
+
+required
+
+struct{ “key“:”value”, }
+
+Уникальный номер штрафа (“customer_type”:”INVOICE”).
+
+Пример запроса:
+
+{
+  "jsonrpc": "2.0",
+  "method": "pay.service.payment",
+  "params": [
+    {
+      "service_id": 1,
+      "amount": 200000,
+      "card_id": "986009TKZYSF1322",
+      "external_id": "merchant_ext_id",
+      "fields": [
+        {
+          "key": "acq-0206_01_1",
+          "value": "RA24864040520"
+        }
+      ]
+    }
+  ],
+  "id": "22b43430-115f-40fe-8ffc-9a76948c112e"
+}
+ПАРАМЕТРЫ ОТВЕТА:
+application/json
+
+pay_id
+
+uuid
+
+идентификатор таблицы платежей.
+
+state
+
+int
+
+Статус платежа.
+
+Пример ответа:
+
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "pay_id": "34849deb-44ef-40af-a7c4-642b5c97f979",
+    "state": 3
+  },
+  "id": "8fb268ec-04ec-4e58-a23e-b59e9418328d"
+}
+
+=== pay.service.fiscal (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/pay.service.fiscal) ===
+Получение ссылки на фискальный чек платежа
+POST
+
+/acquiring/v1/pay.service.fiscal
+
+Нет данных.
+
+=== bo.pay.create (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.pay.create) ===
+Создание платежа через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.pay.create
+
+Нет данных.
+
+=== bo.pay.confirm (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.pay.confirm) ===
+Подтверждение платежа через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.pay.confirm
+
+Нет данных.
+
+=== bo.pay.cancel (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.pay.cancel) ===
+Полный возврат средств на карту через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.pay.cancel
+
+Нет данных.
+
+=== bo.pay.cancel.partial (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.pay.cancel.partial) ===
+Частичный возврат средств на карту через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.pay.cancel.partial
+
+Нет данных.
+
+=== bo.pay.a2c (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.pay.a2c) ===
+Пополнение средств карты через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.pay.a2c
+
+Нет данных.
+
+=== bo.card.info (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.card.info) ===
+Получение данных карты через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.card.info
+
+Нет данных.
+
+=== bo.card.balance (https://acq-docs.hamkorbank.uz/acquiring-docs/developers/bo.card.balance) ===
+Получение баланса карты через шлюз bo-gate
+POST
+
+/acquiring/v1/bo.card.balance
+
+Нет данных.

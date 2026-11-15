@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/trip.completed.v1.json",
+  "title": "trip.completed",
+  "description": "Safar yakunlandi.",
+  "x-producer": "trip-order",
+  "x-nats-subject": "izgo.trip.completed.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "trip.completed"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "trip_id",
+        "order_id",
+        "driver_id",
+        "passenger_id",
+        "final_price",
+        "commission",
+        "distance_m",
+        "duration_s",
+        "completed_at",
+        "payment_method"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trip_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "driver_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "passenger_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "final_price": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Summa, tiyin (UZS * 100)"
+        },
+        "commission": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Summa, tiyin (UZS * 100)"
+        },
+        "distance_m": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_s": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payment_method": {
+          "type": "string",
+          "enum": [
+            "cash",
+            "card",
+            "wallet",
+            "payme",
+            "click"
+          ],
+          "description": "Buyurtmaning to'lov usuli (trip-order har doim yuboradi). Wallet: cash — faqat komissiya yechiladi; card/wallet/payme/click — haydovchiga final_price − commission yoziladi. Eski (maydonsiz) hodisalarni Wallet naqd deb oladi."
+        }
+      }
+    }
+  }
+}

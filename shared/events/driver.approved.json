@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/driver.approved.v1.json",
+  "title": "driver.approved",
+  "description": "Operator haydovchi arizasini tasdiqladi.",
+  "x-producer": "backoffice",
+  "x-nats-subject": "izgo.driver.approved.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "driver.approved"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "driver_id",
+        "approved_by",
+        "approved_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "driver_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "approved_by": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Tasdiqlagan xodim ID si"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

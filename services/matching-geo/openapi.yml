@@ -1,0 +1,240 @@
+openapi: 3.1.0
+info:
+  title: IZGO Matching & Geo — ichki API
+  version: 0.1.0
+  description: |
+    Faqat servislararo chaqiruv. Kong tashqariga CHIQARMAYDI va `api/openapi.yml` ga kirmaydi.
+    Har bir so'rovda `X-Internal-Token` (umumiy sir, `INTERNAL_TOKENS`) kerak; aks holda `403 FORBIDDEN` (`params.reason = internal_only`).
+
+    Maydon nomlari platformaning qolgan qismi bilan bir xil (snake_case). Masofa — metr, vaqt — soniya.
+    Holatlar Redis'da: `driver:{id}:status` = available | busy | offline. `busy` ni faqat NATS `order.accepted`, `available` ga
+    qaytarishni `trip.completed` o'rnatadi; haydovchi onlayn/oflayn bo'lishini PUT .../status boshqaradi.
+servers:
+  - url: http://matching-geo:8013
+paths:
+  /internal/matching/location:
+    post:
+      summary: Haydovchi joylashuvi (GEOADD, TTL 2 daqiqa)
+      description: |
+        Haydovchi ilovasi har ~10 soniyada yuboradi (ilova to'g'ridan-to'g'ri chaqira olmaydi: ichki API — Driver servisi yoki
+        keyingi shlyuz orqali). F-11: oldingi nuqtadan tezlik 300 km/soatdan oshsa `suspicious: true` (+ log va Redis stream
+        `matching:gps-anomalies`); nuqta baribir saqlanadi.
+      operationId: matchingLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationRequest' }
+      responses:
+        '200':
+          description: Saqlandi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suspicious]
+                properties:
+                  suspicious: { type: boolean }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /internal/matching/find:
+    post:
+      summary: Radiusdagi mos haydovchilarni topish (GEOSEARCH)
+      description: |
+        Filtr: profil `state = active`, onlayn (joylashuv 2 daqiqadan eski emas), status `available` (faol safari yo'q),
+        passenger — o'rindiqlar soni yetarli (`seats`) yoki `car_class` aynan teng; delivery — `vehicle_type` aynan teng.
+        Masofa bo'yicha o'sish tartibida. `order_id` berilsa har bir haydovchi uchun taklif yaratiladi
+        (`offer_id = UUIDv5(order_id, driver_id)` — takroriy chaqiruv bir xil id beradi) va NATS `offer.created` chiqadi.
+      operationId: matchingFind
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FindRequest' }
+      responses:
+        '200':
+          description: Haydovchilar (bo'sh bo'lishi mumkin)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drivers]
+                properties:
+                  drivers: { type: array, items: { $ref: '#/components/schemas/Match' } }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /internal/matching/route:
+    post:
+      summary: Ikki nuqta orasidagi marshrut (hozir mock)
+      description: Haversine × 1.3 (Pricing bilan bir xil, `shared/geo`); davomiylik — 30 km/soat. Keyinroq Mapbox Directions.
+      operationId: matchingRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              additionalProperties: false
+              properties:
+                from: { $ref: '#/components/schemas/GeoPoint' }
+                to: { $ref: '#/components/schemas/GeoPoint' }
+      responses:
+        '200':
+          description: Marshrut
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [distance_m, duration_s]
+                properties:
+                  distance_m: { type: integer }
+                  duration_s: { type: integer }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /internal/matching/drivers/{id}/profile:
+    put:
+      summary: Haydovchi profili (Driver servisi sinxronlaydi) — to'liq almashtiriladi
+      description: "Mos kelish uchun kerak: holat, o'rindiqlar soni, mashina turi. Profili yo'q haydovchi taklif olmaydi."
+      operationId: matchingDriverProfile
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              additionalProperties: false
+              properties:
+                state: { type: string, enum: [draft, pending_review, active, rejected, blocked] }
+                seats: { type: integer, minimum: 1, maximum: 8 }
+                car_class: { type: string, enum: [economy, comfort, business, minivan] }
+                vehicle_type: { type: string, enum: [spark, damas, labo, isuzu, isuzu2, fura] }
+      responses:
+        '204': { description: Saqlandi }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Driver servisi sinxronlashi (haydovchi active bo'lganda / profil yangilanganda) — to'liq almashtiriladi
+      description: |
+        PUT bilan bir xil Redis profili, lekin camelCase body. `status` — Driver holati (active, blocked, ...),
+        Matching'ning available/busy/offline holati emas. `driverId` = path'dagi `id` (identity user ID, JWT `sub`).
+        `location` berilsa joylashuv ham yangilanadi (`/internal/matching/location` kabi).
+      operationId: matchingDriverProfileSync
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [driverId, status]
+              additionalProperties: false
+              properties:
+                driverId: { type: string, format: uuid }
+                status: { type: string, enum: [draft, pending_review, active, rejected, blocked] }
+                seats: { type: [integer, 'null'], minimum: 1, maximum: 8 }
+                carClass: { type: [string, 'null'], enum: [economy, comfort, business, minivan, null] }
+                vehicleType: { type: [string, 'null'], enum: [spark, damas, labo, isuzu, isuzu2, fura, null] }
+                location:
+                  type: [object, 'null']
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number, minimum: -90, maximum: 90 }
+                    lng: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '204': { description: Saqlandi }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /internal/matching/drivers/{id}/status:
+    put:
+      summary: Haydovchi onlayn/oflayn (available | offline)
+      description: "`busy` qo'lda o'rnatilmaydi (422). Band haydovchini available qilib bo'lmaydi (403, reason = driver_busy)."
+      operationId: matchingDriverStatus
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: { type: string, enum: [available, offline] }
+      responses:
+        '200':
+          description: O'rnatildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  responses:
+    Error:
+      description: "{ error: { key, params } } — FORBIDDEN | VALIDATION_ERROR | INTERNAL_ERROR"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [key, params]
+                properties:
+                  key: { type: string }
+                  params: { type: object, additionalProperties: true }
+  schemas:
+    GeoPoint:
+      type: object
+      required: [lat, lng]
+      additionalProperties: false
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    LocationRequest:
+      allOf:
+        - $ref: '#/components/schemas/GeoPoint'
+        - type: object
+          required: [driver_id]
+          properties:
+            driver_id: { type: string, format: uuid }
+    FindRequest:
+      type: object
+      required: [type, from]
+      additionalProperties: false
+      description: "`passenger` — `seats` (1–4) YOKI `car_class`; `delivery` — faqat `vehicle_type`."
+      properties:
+        type: { type: string, enum: [passenger, delivery] }
+        seats: { type: integer, minimum: 1, maximum: 4 }
+        car_class: { type: string, enum: [economy, comfort, business, minivan] }
+        vehicle_type: { type: string, enum: [spark, damas, labo, isuzu, isuzu2, fura] }
+        from: { $ref: '#/components/schemas/GeoPoint' }
+        radius_m: { type: number, minimum: 1, maximum: 200000, default: 50000 }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        order_id: { type: string, format: uuid, description: "Berilsa taklif yaratiladi va offer.created chiqadi" }
+        expires_at: { type: string, format: date-time, description: "Taklif muddati (order_id bilan); default hozir + 2 daqiqa, ko'pi bilan 24 soat" }
+    Match:
+      type: object
+      required: [driver_id, distance_m, location, pickup_eta_s]
+      properties:
+        driver_id: { type: string, format: uuid }
+        distance_m: { type: integer, description: Haydovchidan `from` nuqtagacha (to'g'ri chiziq) }
+        location: { $ref: '#/components/schemas/GeoPoint' }
+        pickup_eta_s: { type: integer, description: "Taxminiy yetib borish vaqti (marshrut mock'i bo'yicha)" }
+        offer_id: { type: string, format: uuid }
+        offer_expires_at: { type: string, format: date-time }

@@ -1,0 +1,13 @@
+**/*_test.go
+services/matching-geo/openapi.yml
+**/*.pem
+**/*.key
+**/.env
+secrets
+.git
+services/backoffice
+services/driver
+services/wallet
+services/identity
+services/trip-order
+services/pricing

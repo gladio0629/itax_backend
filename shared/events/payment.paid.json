@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/payment.paid.v1.json",
+  "title": "payment.paid",
+  "description": "To'lov muvaffaqiyatli o'tdi (Payme/Click yoki ichki hamyon).",
+  "x-producer": "wallet",
+  "x-nats-subject": "izgo.payment.paid.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "payment.paid"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "payment_id",
+        "wallet_id",
+        "amount",
+        "provider",
+        "paid_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "payment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "wallet_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Summa, tiyin (UZS * 100)"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "payme",
+            "click",
+            "wallet",
+            "mock"
+          ]
+        },
+        "provider_tx_id": {
+          "type": "string"
+        },
+        "paid_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

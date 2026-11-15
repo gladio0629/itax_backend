@@ -1,0 +1,82 @@
+# IZGO API Gateway — Kong DB-less deklarativ konfiguratsiya.
+# strip_path: false — servislar to'liq yo'lni oladi (OpenAPI dagi path bilan bir xil).
+# /internal/* yo'llari bu yerda ATAYLAB yo'q: ular faqat Docker tarmog'i ichida (X-Internal-Token bilan).
+# Pricing (8014), Risk (8018), Doc-scanner (8019) tashqariga umuman chiqmaydi. Matching-geo'dan faqat
+# POST /api/v1/location/update (haydovchi GPS, JWT), Notification'dan faqat /api/v1/notifications va /ws ochiq.
+# Kong prefiks yo'llarda eng uzun mosini tanlaydi: /admin/v1/auth → identity,
+# qolgan /admin/v1/* → backoffice.
+_format_version: "3.0"
+_transform: true
+
+services:
+  # ------------------------------------------------------------- public API
+  - name: identity
+    url: http://identity:8010
+    routes:
+      - name: auth
+        paths: ["/api/v1/auth"]
+        strip_path: false
+      - name: profile
+        paths: ["/api/v1/profile"]
+        strip_path: false
+      - name: admin-auth
+        paths: ["/admin/v1/auth"]
+        strip_path: false
+
+  - name: trip-order
+    url: http://trip-order:8012
+    routes:
+      - name: orders
+        paths: ["/api/v1/orders"]
+        strip_path: false
+      - name: trips
+        paths: ["/api/v1/trips"]
+        strip_path: false
+
+  - name: notification
+    url: http://notification:8016
+    routes:
+      - name: notifications
+        paths: ["/api/v1/notifications"]
+        strip_path: false
+      # WebSocket (/ws?token=JWT): token servisning o'zida tekshiriladi. /internal/* bu yerda ATAYLAB yo'q.
+      - name: notifications-ws
+        paths: ["/ws"]
+        strip_path: false
+
+  - name: driver
+    url: http://driver:8011
+    routes:
+      - name: drivers
+        paths: ["/api/v1/drivers"]
+        strip_path: false
+
+  - name: matching-geo
+    url: http://matching-geo:8013
+    routes:
+      - name: location
+        paths: ["/api/v1/location"]
+        methods: [POST]
+        strip_path: false
+
+  - name: wallet
+    url: http://wallet:8015
+    routes:
+      - name: wallet
+        paths: ["/api/v1/wallet"]
+        strip_path: false
+
+  # -------------------------------------------------------------- admin API
+  - name: backoffice
+    url: http://backoffice:8017
+    routes:
+      - name: admin
+        paths: ["/admin/v1"]
+        strip_path: false
+
+plugins:
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true

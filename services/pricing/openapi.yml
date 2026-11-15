@@ -1,0 +1,98 @@
+openapi: 3.1.0
+info:
+  title: IZGO Pricing — ichki API
+  version: 0.1.0
+  description: |
+    Faqat servislararo chaqiruv (Trip & Order). Kong tashqariga CHIQARMAYDI va `api/openapi.yml` ga kirmaydi.
+    Har bir so'rovda `X-Internal-Token` (umumiy sir, `INTERNAL_TOKENS`) kerak; aks holda `403 FORBIDDEN`.
+
+    Maydon nomlari platformaning qolgan qismi bilan bir xil (snake_case; Trip & Order dagi `Quote` ga mos).
+    Formula va koeffitsientlar hujjatda hali [OCHIQ]: ular bazadagi tarifdan olinadi (`pricing_db.tariffs`).
+servers:
+  - url: http://pricing:8014
+paths:
+  /internal/pricing/calculate:
+    post:
+      summary: Buyurtma narxini hisoblash
+      operationId: pricingCalculate
+      security: [{ internalToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalculateRequest' }
+      responses:
+        '200':
+          description: Narx, komissiya, masofa va taxminiy davomiylik
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalculateResponse' }
+        '403':
+          description: Ichki token yo'q yoki noto'g'ri (FORBIDDEN, params.reason = internal_only)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: VALIDATION_ERROR (params.fields — maydon -> xato kaliti)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: INTERNAL_ERROR (masalan, amaldagi tarif yo'q)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  securitySchemes:
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+  schemas:
+    GeoPoint:
+      type: object
+      required: [lat, lng]
+      additionalProperties: false
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    CalculateRequest:
+      type: object
+      required: [type, from, to]
+      additionalProperties: false
+      description: |
+        `passenger` — `seats` (1–4) YOKI `car_class` (butun mashina). `delivery` — faqat `vehicle_type`.
+        Narx/masofa yuborilmaydi — server hisoblaydi.
+      properties:
+        type: { type: string, enum: [passenger, delivery] }
+        seats: { type: integer, minimum: 1, maximum: 4 }
+        car_class: { type: string, enum: [economy, comfort, business, minivan] }
+        vehicle_type: { type: string, enum: [spark, damas, labo, isuzu, isuzu2, fura] }
+        from: { $ref: '#/components/schemas/GeoPoint' }
+        to: { $ref: '#/components/schemas/GeoPoint' }
+      oneOf:
+        - required: [seats]
+          not: { anyOf: [{ required: [car_class] }, { required: [vehicle_type] }] }
+        - required: [car_class]
+          not: { anyOf: [{ required: [seats] }, { required: [vehicle_type] }] }
+        - required: [vehicle_type]
+          not: { anyOf: [{ required: [seats] }, { required: [car_class] }] }
+    CalculateResponse:
+      type: object
+      required: [price, commission, distance_m, duration_s, tariff_version]
+      properties:
+        price: { type: integer, description: Tiyinda (so'm × 100), butun son }
+        commission: { type: integer, description: "Tiyinda; tarifdagi komissiya foizidan (vazifada ko'rsatilmagan, lekin Trip & Order va Wallet uchun kerak)" }
+        distance_m: { type: integer, description: "Haversine × yo'l koeffitsienti (1.3), metrda" }
+        duration_s: { type: integer, description: "Taxminiy davomiylik, soniyada (o'rtacha tezlik bo'yicha)" }
+        tariff_version: { type: integer, description: Hisobda ishlatilgan tarif versiyasi (audit uchun) }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [key, params]
+          properties:
+            key: { type: string }
+            params: { type: object, additionalProperties: true }

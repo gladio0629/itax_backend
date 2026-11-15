@@ -1,0 +1,9 @@
+.env
+node_modules/
+dist/
+build/
+.gradle/
+secrets/
+uploads/
+.claude/settings.local.json
+*.log

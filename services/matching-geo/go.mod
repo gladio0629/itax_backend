@@ -1,0 +1,26 @@
+module github.com/izgo/matching-geo
+
+go 1.26.0
+
+require (
+	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/google/uuid v1.6.0
+	github.com/izgo/shared v0.0.0
+	github.com/kelseyhightower/envconfig v1.4.0
+	github.com/nats-io/nats.go v1.55.0
+	github.com/redis/go-redis/v9 v9.23.0
+)
+
+require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/nats-io/nkeys v0.4.16 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+)
+
+replace github.com/izgo/shared => ../../shared

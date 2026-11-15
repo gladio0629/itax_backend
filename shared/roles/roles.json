@@ -1,0 +1,129 @@
+{
+  "_comment": "Rollar va ruxsatlar — YAGONA manba (hujjat 2.5). Go: shared/roles (embed); NestJS backoffice shu faylni o'qiydi. permissions: '<bo'lim>:read|write' (bo'limlar = openapi AdminSection). creatable_roles: xodim yaratish huquqi (read/write'dan alohida). kind=user rollari bo'limlarsiz.",
+  "sections": [
+    "staff",
+    "drivers",
+    "passengers",
+    "orders",
+    "wallet",
+    "tariffs",
+    "operator",
+    "stats"
+  ],
+  "roles": {
+    "passenger": {
+      "kind": "user",
+      "permissions": [
+        "orders:create",
+        "orders:read",
+        "profile:read",
+        "profile:write"
+      ]
+    },
+    "driver": {
+      "kind": "user",
+      "permissions": [
+        "orders:accept",
+        "orders:read",
+        "profile:read",
+        "profile:write",
+        "trips:manage",
+        "wallet:read"
+      ]
+    },
+    "superadmin": {
+      "kind": "staff",
+      "permissions": [
+        "drivers:read",
+        "drivers:write",
+        "operator:read",
+        "operator:write",
+        "orders:read",
+        "orders:write",
+        "passengers:read",
+        "passengers:write",
+        "staff:read",
+        "staff:write",
+        "stats:read",
+        "stats:write",
+        "tariffs:read",
+        "tariffs:write",
+        "wallet:read",
+        "wallet:write"
+      ],
+      "creatable_roles": [
+        "superadmin",
+        "owner",
+        "manager",
+        "marketer",
+        "operator"
+      ]
+    },
+    "owner": {
+      "kind": "staff",
+      "permissions": [
+        "drivers:read",
+        "drivers:write",
+        "operator:read",
+        "operator:write",
+        "orders:read",
+        "orders:write",
+        "passengers:read",
+        "passengers:write",
+        "staff:read",
+        "staff:write",
+        "stats:read",
+        "stats:write",
+        "tariffs:read",
+        "tariffs:write",
+        "wallet:read",
+        "wallet:write"
+      ],
+      "creatable_roles": [
+        "manager",
+        "marketer",
+        "operator"
+      ]
+    },
+    "manager": {
+      "kind": "staff",
+      "permissions": [
+        "drivers:read",
+        "drivers:write",
+        "operator:read",
+        "operator:write",
+        "orders:read",
+        "orders:write",
+        "passengers:read",
+        "passengers:write",
+        "staff:read",
+        "staff:write",
+        "stats:read",
+        "stats:write",
+        "tariffs:read",
+        "tariffs:write",
+        "wallet:read",
+        "wallet:write"
+      ],
+      "creatable_roles": [
+        "marketer",
+        "operator"
+      ]
+    },
+    "marketer": {
+      "kind": "staff",
+      "permissions": [
+        "stats:read"
+      ],
+      "creatable_roles": []
+    },
+    "operator": {
+      "kind": "staff",
+      "permissions": [
+        "operator:read",
+        "operator:write"
+      ],
+      "creatable_roles": []
+    }
+  }
+}

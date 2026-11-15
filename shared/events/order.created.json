@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/order.created.v1.json",
+  "title": "order.created",
+  "description": "Yo'lovchi yangi buyurtma yaratdi.",
+  "x-producer": "trip-order",
+  "x-nats-subject": "izgo.order.created.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "order.created"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "order_id",
+        "passenger_id",
+        "type",
+        "from",
+        "to",
+        "price",
+        "payment_method",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "passenger_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "passenger",
+            "delivery"
+          ]
+        },
+        "seats": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "car_class": {
+          "type": "string",
+          "enum": [
+            "economy",
+            "comfort",
+            "business",
+            "minivan"
+          ]
+        },
+        "vehicle_type": {
+          "type": "string",
+          "enum": [
+            "spark",
+            "damas",
+            "labo",
+            "isuzu",
+            "isuzu2",
+            "fura"
+          ],
+          "description": "Faqat delivery uchun"
+        },
+        "from": {
+          "type": "object",
+          "required": [
+            "lat",
+            "lng"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "lat": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "lng": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "address": {
+              "type": "string"
+            }
+          }
+        },
+        "to": {
+          "type": "object",
+          "required": [
+            "lat",
+            "lng"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "lat": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "lng": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "address": {
+              "type": "string"
+            }
+          }
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Bo'sh bo'lsa — hozir"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Summa, tiyin (UZS * 100)"
+        },
+        "payment_method": {
+          "type": "string",
+          "enum": [
+            "cash",
+            "card",
+            "wallet",
+            "payme",
+            "click"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

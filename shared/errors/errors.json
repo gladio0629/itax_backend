@@ -1,0 +1,297 @@
+{
+  "title": "IZGO xato formati",
+  "description": "Barcha servislar xatoni shu formatda qaytaradi. Klient 'key' bo'yicha lokalizatsiya qilingan matnni ko'rsatadi; 'params' matnga qo'yiladigan qiymatlar.",
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://izgo.uz/schemas/errors/error.json",
+    "type": "object",
+    "required": [
+      "error"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "error": {
+        "type": "object",
+        "required": [
+          "key",
+          "params"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  },
+  "example": {
+    "error": {
+      "key": "WALLET_LIMIT_REACHED",
+      "params": {
+        "limit": -5000000
+      }
+    }
+  },
+  "codes": {
+    "AUTH_OTP_EXPIRED": {
+      "http": 401,
+      "description": "OTP kodining amal qilish muddati tugagan.",
+      "params": {}
+    },
+    "AUTH_OTP_INVALID": {
+      "http": 401,
+      "description": "OTP kodi noto'g'ri.",
+      "params": {
+        "attempts_left": "integer"
+      }
+    },
+    "AUTH_TOKEN_EXPIRED": {
+      "http": 401,
+      "description": "Access yoki refresh token muddati tugagan.",
+      "params": {}
+    },
+    "AUTH_OTP_RATE_LIMITED": {
+      "http": 429,
+      "description": "OTP so'rovlari limitidan oshildi (telefon: 5/soat, IP: 20/soat) yoki qayta so'rash vaqti hali kelmadi. Retry-After sarlavhasi ham beriladi.",
+      "params": {
+        "retry_after": "integer — necha soniyadan keyin urinish mumkin"
+      }
+    },
+    "ORDER_NOT_FOUND": {
+      "http": 404,
+      "description": "Buyurtma topilmadi.",
+      "params": {
+        "order_id": "uuid"
+      }
+    },
+    "NOT_FOUND": {
+      "http": 404,
+      "description": "Umumiy: so'ralgan resurs topilmadi (aniqroq kod bo'lmaganda).",
+      "params": {
+        "id": "uuid"
+      }
+    },
+    "DRIVER_NOT_FOUND": {
+      "http": 404,
+      "description": "Haydovchi topilmadi.",
+      "params": {
+        "driver_id": "uuid"
+      }
+    },
+    "PASSENGER_NOT_FOUND": {
+      "http": 404,
+      "description": "Yo'lovchi topilmadi.",
+      "params": {
+        "passenger_id": "uuid"
+      }
+    },
+    "STAFF_NOT_FOUND": {
+      "http": 404,
+      "description": "Xodim topilmadi.",
+      "params": {
+        "staff_id": "uuid"
+      }
+    },
+    "TARIFF_NOT_FOUND": {
+      "http": 404,
+      "description": "Tarif topilmadi.",
+      "params": {
+        "tariff_id": "uuid"
+      }
+    },
+    "REGISTRATION_ALREADY_SUBMITTED": {
+      "http": 409,
+      "description": "Haydovchi arizasi allaqachon yuborilgan (pending_review/active) — 1–3 qadamlarni o'zgartirib bo'lmaydi.",
+      "params": {}
+    },
+    "DOCUMENT_ALREADY_UPLOADED": {
+      "http": 409,
+      "description": "Bu hujjatga fayl allaqachon yuklangan — yangi upload-url oling.",
+      "params": {}
+    },
+    "FILE_TOO_LARGE": {
+      "http": 413,
+      "description": "Yuklangan fayl ruxsat etilgan hajmdan katta.",
+      "params": {
+        "max_bytes": "integer"
+      }
+    },
+    "ORDER_ALREADY_TAKEN": {
+      "http": 409,
+      "description": "Buyurtmani boshqa haydovchi allaqachon qabul qilgan.",
+      "params": {
+        "order_id": "uuid"
+      }
+    },
+    "WALLET_LIMIT_REACHED": {
+      "http": 402,
+      "description": "Hamyon qarzi limitga yetgan — yangi takliflar olinmaydi.",
+      "params": {
+        "limit": "integer"
+      }
+    },
+    "DRIVER_BLOCKED": {
+      "http": 403,
+      "description": "Haydovchi bloklangan.",
+      "params": {
+        "reason": "string"
+      }
+    },
+    "FORBIDDEN": {
+      "http": 403,
+      "description": "Ushbu amal uchun ruxsat yo'q. Aniq sabab params.reason da (ixtiyoriy — umumiy ruxsat yo'qligida berilmaydi). Klient matnni reason bo'yicha tanlaydi.",
+      "params": {
+        "reason": "string (ixtiyoriy) — quyidagi reasons katalogidan",
+        "limit": "integer (ixtiyoriy) — active_orders_limit / active_trip_limit uchun"
+      },
+      "reasons": {
+        "internal_only": {
+          "service": "pricing, identity",
+          "description": "/internal/* — X-Internal-Token yo'q yoki noto'g'ri (faqat ichki servislar chaqiradi)."
+        },
+        "role": {
+          "service": "trip-order",
+          "description": "Token roli endpointga mos emas (masalan yo'lovchi haydovchi endpointini chaqirdi)."
+        },
+        "app_mismatch": {
+          "service": "trip-order",
+          "description": "X-App sarlavhasi token audience bilan mos emas."
+        },
+        "active_orders_limit": {
+          "service": "trip-order",
+          "description": "Yo'lovchining faol buyurtmalari limiti to'lgan.",
+          "params": {
+            "limit": "integer"
+          }
+        },
+        "active_trip_limit": {
+          "service": "trip-order",
+          "description": "Haydovchining faol safarlari limiti to'lgan.",
+          "params": {
+            "limit": "integer"
+          }
+        },
+        "driver_assigned": {
+          "service": "trip-order",
+          "description": "Buyurtmaga haydovchi biriktirilgan — bu parametrni o'zgartirib bo'lmaydi."
+        },
+        "trip_started": {
+          "service": "trip-order",
+          "description": "Safar boshlangan — buyurtmani o'zgartirish/bekor qilish mumkin emas."
+        },
+        "order_closed": {
+          "service": "trip-order",
+          "description": "Buyurtma yopilgan (completed/cancelled/expired)."
+        },
+        "concurrent_update": {
+          "service": "trip-order",
+          "description": "Buyurtma parallel o'zgardi — qayta o'qib, so'rovni takrorlang."
+        },
+        "already_started": {
+          "service": "trip-order",
+          "description": "Safar allaqachon boshlangan."
+        },
+        "trip_not_started": {
+          "service": "trip-order",
+          "description": "Safar hali boshlanmagan — tugatib bo'lmaydi."
+        },
+        "trip_completed": {
+          "service": "trip-order",
+          "description": "Safar allaqachon tugagan."
+        },
+        "invalid_state": {
+          "service": "trip-order",
+          "description": "Safar holati bu amalga ruxsat bermaydi (boshqa holatlar)."
+        },
+        "order_not_completed": {
+          "service": "trip-order",
+          "description": "Buyurtma tugallanmagan — baholab bo'lmaydi."
+        },
+        "already_rated": {
+          "service": "trip-order",
+          "description": "Buyurtma allaqachon baholangan (o'zgartirish — PUT .../rate)."
+        },
+        "upload_url_expired": {
+          "service": "driver",
+          "description": "Hujjat yuklash URL muddati o'tgan — yangi upload-url oling."
+        },
+        "not_pending": {
+          "service": "backoffice",
+          "description": "Tasdiq kutayotgan yozuv/o'zgarish yo'q (approve/reject)."
+        },
+        "not_in_progress": {
+          "service": "backoffice",
+          "description": "Operator ishi in_progress holatida emas (complete)."
+        },
+        "not_assigned": {
+          "service": "backoffice",
+          "description": "Operator ishi boshqa xodimga biriktirilgan (complete)."
+        },
+        "invalid_signature": {
+          "service": "wallet",
+          "description": "To'lov callbacki imzosi yoki IP manzili tekshiruvdan o'tmadi (F-14)."
+        }
+      }
+    },
+    "VALIDATION_ERROR": {
+      "http": 422,
+      "description": "So'rov maydonlari noto'g'ri.",
+      "params": {
+        "fields": "object<string, string> — maydon nomi → xato kaliti"
+      }
+    },
+    "INTERNAL_ERROR": {
+      "http": 500,
+      "description": "Kutilmagan server xatosi. Tafsilot klientga berilmaydi.",
+      "params": {
+        "request_id": "string"
+      }
+    },
+    "STAFF_EMAIL_TAKEN": {
+      "http": 409,
+      "description": "Bu email bilan xodim allaqachon mavjud.",
+      "params": {}
+    },
+    "STAFF_PHONE_TAKEN": {
+      "http": 409,
+      "description": "Bu telefon bilan xodim allaqachon mavjud.",
+      "params": {}
+    },
+    "TARIFF_CHANGE_PENDING": {
+      "http": 409,
+      "description": "Tarifda tasdiq kutayotgan o'zgarish bor; avval u tasdiqlanishi yoki rad etilishi kerak.",
+      "params": {}
+    },
+    "IDEMPOTENCY_KEY_REUSED": {
+      "http": 409,
+      "description": "Idempotency-Key boshqa so'rov tanasi bilan ishlatilgan.",
+      "params": {}
+    },
+    "DUPLICATE_CALLBACK": {
+      "http": 409,
+      "description": "Takroriy to'lov callbacki (shu Idempotency-Key yoki to'lov allaqachon yakunlangan) rad etildi.",
+      "params": {}
+    },
+    "AMOUNT_MISMATCH": {
+      "http": 409,
+      "description": "Callback summasi to'lov summasiga (yoki provayderdan qayta tekshirilgan summaga) mos kelmaydi.",
+      "params": {
+        "expected": "integer (tiyin)",
+        "got": "integer (tiyin)"
+      }
+    },
+    "IDENTITY_UNAVAILABLE": {
+      "http": 502,
+      "description": "Ichki servis (identity) javob bermadi yoki kutilmagan javob berdi; amal bajarilmadi.",
+      "params": {
+        "reason": "string — timeout | unreachable | http_<status>"
+      }
+    }
+  }
+}

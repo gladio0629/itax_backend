@@ -1,0 +1,9 @@
+**/*_test.go
+**/*.pem
+**/*.key
+**/.env
+secrets
+.git
+services/backoffice
+services/driver
+services/wallet

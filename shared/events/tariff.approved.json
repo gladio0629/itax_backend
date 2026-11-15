@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/tariff.approved.v1.json",
+  "title": "tariff.approved",
+  "description": "Tarif o'zgarishi ikkinchi xodim tomonidan tasdiqlandi (POST /admin/v1/tariffs/{id}/approve) va kuchga kirdi. Rad etilgan o'zgarish hodisa chiqarmaydi. Pricing tarif keshini yangilaydi.",
+  "x-producer": "backoffice",
+  "x-consumers": [
+    "pricing"
+  ],
+  "x-nats-subject": "izgo.tariff.approved.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "tariff.approved"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "tariff_id",
+        "action",
+        "requested_by",
+        "approved_by",
+        "approved_at",
+        "tariff"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tariff_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "description": "Tasdiqlangan o'zgarish turi"
+        },
+        "requested_by": {
+          "type": "string",
+          "format": "uuid",
+          "description": "O'zgarishni so'ragan xodim"
+        },
+        "approved_by": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Tasdiqlagan xodim (requested_by dan farqli)"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tariff": {
+          "description": "Tasdiqdan keyingi amaldagi qiymatlar (openapi TariffFields bilan bir xil); action = delete bo'lsa null.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "car_class",
+                "base_fare",
+                "per_km",
+                "per_min",
+                "min_fare",
+                "commission_percent",
+                "active"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "car_class": {
+                  "type": "string",
+                  "enum": [
+                    "economy",
+                    "comfort",
+                    "business",
+                    "minivan"
+                  ]
+                },
+                "base_fare": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Tiyinda"
+                },
+                "per_km": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Tiyinda"
+                },
+                "per_min": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Tiyinda"
+                },
+                "min_fare": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Tiyinda"
+                },
+                "commission_percent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "active": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "delete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tariff": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "tariff": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

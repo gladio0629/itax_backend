@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/wallet.limit_reached.v1.json",
+  "title": "wallet.limit_reached",
+  "description": "Haydovchi qarzi ruxsat etilgan limitga yetdi — yangi takliflar to'xtatiladi.",
+  "x-producer": "wallet",
+  "x-nats-subject": "izgo.wallet.limit_reached.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "wallet.limit_reached"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "wallet_id",
+        "driver_id",
+        "balance",
+        "limit",
+        "reached_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "wallet_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "driver_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "balance": {
+          "type": "integer",
+          "description": "Joriy balans, tiyin (manfiy = qarz)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Qarz limiti, tiyin (manfiy son)"
+        },
+        "reached_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
