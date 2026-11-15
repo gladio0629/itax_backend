@@ -217,7 +217,16 @@ func (s *Service) CreateOrder(ctx context.Context, passenger uuid.UUID, in Creat
 		s.release(ctx, guard.Passenger, passenger)
 		return domain.Order{}, err
 	}
-	created, replay, err := s.st.CreateOrder(ctx, o, offers, ev, s.opt.PassengerActiveLimit)
+	evs := []events.Event{ev}
+	for _, of := range offers {
+		oe, err := events.OfferCreated(of, now, trace)
+		if err != nil {
+			s.release(ctx, guard.Passenger, passenger)
+			return domain.Order{}, err
+		}
+		evs = append(evs, oe)
+	}
+	created, replay, err := s.st.CreateOrder(ctx, o, offers, evs, s.opt.PassengerActiveLimit)
 	if err != nil || replay {
 		s.release(ctx, guard.Passenger, passenger) // joy yaratilmadi
 		if errors.Is(err, domain.ErrLimitReached) {

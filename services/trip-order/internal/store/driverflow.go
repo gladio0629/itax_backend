@@ -91,7 +91,7 @@ func (s *Store) ArriveTrip(ctx context.Context, tripID, driver uuid.UUID, now ti
 // haydovchilarga takliflar), shu haydovchining taklifi yopiladi; trip.cancelled outbox'ga.
 // *domain.StateError — safar boshlangan/tugagan/bekor qilingan.
 func (s *Store) DriverCancel(ctx context.Context, tripID, driver uuid.UUID, reason string, comment *string, now, searchExpires time.Time,
-	offers []domain.Offer, mkEvent func(domain.Trip) (events.Event, error)) (domain.Trip, error) {
+	offers []domain.Offer, mkEvent func(domain.Trip) (events.Event, error), mkOffer func(domain.Offer) (events.Event, error)) (domain.Trip, error) {
 	var out domain.Trip
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := lockUser(ctx, tx, "d", driver); err != nil {
@@ -127,13 +127,27 @@ func (s *Store) DriverCancel(ctx context.Context, tripID, driver uuid.UUID, reas
 		}
 		for _, of := range offers {
 			// avval yopilgan taklif qayta ochiladi; rad etgan haydovchiga qayta yuborilmaydi
-			if _, err := tx.Exec(ctx, `INSERT INTO offers (id, order_id, driver_id, pickup_eta_s, status, expires_at, created_at)
+			// qayta ochilgan taklif eski ID sini saqlaydi — hodisa shu (haqiqiy) ID bilan chiqadi
+			var id uuid.UUID
+			err := tx.QueryRow(ctx, `INSERT INTO offers (id, order_id, driver_id, pickup_eta_s, status, expires_at, created_at)
 				VALUES ($1,$2,$3,$4,'pending',$5,$6)
 				ON CONFLICT (order_id, driver_id) DO UPDATE SET status='pending', expires_at=EXCLUDED.expires_at,
 					created_at=EXCLUDED.created_at, pickup_eta_s=EXCLUDED.pickup_eta_s
-				WHERE offers.status='closed'`,
-				of.ID, of.OrderID, of.DriverID, of.PickupETAs, trunc(of.ExpiresAt), trunc(of.CreatedAt)); err != nil {
+				WHERE offers.status='closed' RETURNING id`,
+				of.ID, of.OrderID, of.DriverID, of.PickupETAs, trunc(of.ExpiresAt), trunc(of.CreatedAt)).Scan(&id)
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue // rad etgan haydovchi — taklif qayta ochilmaydi
+			}
+			if err != nil {
 				return fmt.Errorf("offer: %w", err)
+			}
+			of.ID = id
+			ev, err := mkOffer(of)
+			if err != nil {
+				return err
+			}
+			if err := insertOutbox(ctx, tx, ev); err != nil {
+				return err
 			}
 		}
 		ev, err := mkEvent(t)

@@ -13,6 +13,9 @@ import (
 
 const streamName = "TRIP_ORDER_EVENTS"
 
+// offerStreamName — matching-geo streami (izgo.offer.>); sozlamasi matching-geo bilan bir xil.
+const offerStreamName = "MATCHING_EVENTS"
+
 // NATSPublisher — JetStream orqali yuboradi.
 type NATSPublisher struct {
 	nc  *nats.Conn
@@ -61,23 +64,27 @@ func (p *NATSPublisher) ensureStream(ctx context.Context) error {
 	if p.ready {
 		return nil
 	}
-	_, err := p.js.StreamInfo(streamName, nats.Context(ctx))
-	if errors.Is(err, nats.ErrStreamNotFound) {
-		_, err = p.js.AddStream(&nats.StreamConfig{
-			Name:       streamName,
-			Subjects:   []string{"izgo.order.>", "izgo.trip.>"},
-			Storage:    nats.FileStorage,
-			Retention:  nats.LimitsPolicy,
-			MaxAge:     7 * 24 * time.Hour,
-			Duplicates: 10 * time.Minute,
-		}, nats.Context(ctx))
-		if err != nil {
-			p.log.Warn("stream yaratib bo'lmadi, mavjud streamga tayanamiz", "stream", streamName, "err", err)
-			err = nil
+	// offer.created ham shu servisdan chiqadi; uning streami (MATCHING_EVENTS, matching-geo bilan bir xil sozlama)
+	// hali yo'q bo'lsa yaratiladi — aks holda outbox relay shu hodisada to'xtab qoladi.
+	for name, subjects := range map[string][]string{streamName: {"izgo.order.>", "izgo.trip.>"}, offerStreamName: {"izgo.offer.>"}} {
+		_, err := p.js.StreamInfo(name, nats.Context(ctx))
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			_, err = p.js.AddStream(&nats.StreamConfig{
+				Name:       name,
+				Subjects:   subjects,
+				Storage:    nats.FileStorage,
+				Retention:  nats.LimitsPolicy,
+				MaxAge:     7 * 24 * time.Hour,
+				Duplicates: 10 * time.Minute,
+			}, nats.Context(ctx))
+			if err != nil {
+				p.log.Warn("stream yaratib bo'lmadi, mavjud streamga tayanamiz", "stream", name, "err", err)
+				err = nil
+			}
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("events: stream: %w", err)
+		if err != nil {
+			return fmt.Errorf("events: stream %s: %w", name, err)
+		}
 	}
 	p.ready = true
 	return nil

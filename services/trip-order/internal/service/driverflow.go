@@ -89,7 +89,7 @@ func (s *Service) CancelTrip(ctx context.Context, driver, tripID uuid.UUID, reas
 	}
 	t, err := s.st.DriverCancel(ctx, tripID, driver, reason, comment, now, deadline, offers, func(t domain.Trip) (events.Event, error) {
 		return events.TripCancelled(t, "driver", domain.Searching, now, trace)
-	})
+	}, func(of domain.Offer) (events.Event, error) { return events.OfferCreated(of, now, trace) })
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):

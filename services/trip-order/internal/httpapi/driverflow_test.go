@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/izgo/trip-order/internal/testenv"
@@ -137,8 +138,16 @@ func TestDriverCancelRedispatches(t *testing.T) {
 	if r := d2.do("POST", "/api/v1/trips/"+acc2.str("id")+"/cancel", map[string]any{"reason": "other"}); r.Status != 403 || r.errParam("reason") != "trip_started" {
 		t.Fatalf("boshlangan safar: %d %s", r.Status, r.Raw)
 	}
-	if subjects(e)["izgo.trip.cancelled.v1"] != 1 {
-		t.Fatalf("trip.cancelled hodisasi: %v", subjects(e))
+	sub := subjects(e)
+	// offer.created: o (d1, d2) + qayta qidiruvda d2 (qayta ochilgan) + o2 (d1, d2 — d2 band bo'lsa ham mock matching beradi)
+	if sub["izgo.trip.cancelled.v1"] != 1 || sub["izgo.offer.created.v1"] != 5 {
+		t.Fatalf("hodisalar: %v", sub)
+	}
+	// offer.created dagi offer_id — haydovchi qabul qilishda ishlatadigan ID
+	for _, ev := range e.Outbox() {
+		if ev.Subject == "izgo.offer.created.v1" && !strings.Contains(string(ev.Payload), `"offer_id"`) {
+			t.Fatalf("offer.created payload: %s", ev.Payload)
+		}
 	}
 }
 

@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://izgo.uz/schemas/events/offer.created.v1.json",
   "title": "offer.created",
-  "description": "Buyurtma uchun haydovchiga taklif yuborildi.",
-  "x-producer": "matching-geo",
+  "description": "Buyurtma uchun haydovchiga taklif yuborildi. Trip & Order taklifni saqlagan tranzaksiyada chiqaradi (offer_id = qabul qilishdagi ID). matching-geo /find da order_id berilganda ham chiqarishi mumkin, lekin trip-order order_id yubormaydi.",
+  "x-producer": "trip-order",
   "x-nats-subject": "izgo.offer.created.v1",
   "type": "object",
   "required": [

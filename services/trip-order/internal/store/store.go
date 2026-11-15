@@ -226,10 +226,10 @@ func insertOutbox(ctx context.Context, q dbq, e events.Event) error {
 
 // ---------------------------------------------------------------- orders
 
-// CreateOrder — buyurtma + takliflar + order.created hodisasi bitta tranzaksiyada.
+// CreateOrder — buyurtma + takliflar + hodisalar (order.created, har taklif uchun offer.created) bitta tranzaksiyada.
 // replay=true: shu (passenger, Idempotency-Key) bilan buyurtma allaqachon bor — mavjudi qaytadi, hech narsa yozilmaydi.
 // F-24: yo'lovchining faol buyurtmalari activeLimit ga yetgan bo'lsa ErrLimitReached (advisory lock ostida sanaladi).
-func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain.Offer, ev events.Event, activeLimit int) (domain.Order, bool, error) {
+func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain.Offer, evs []events.Event, activeLimit int) (domain.Order, bool, error) {
 	var out domain.Order
 	replay := false
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
@@ -299,8 +299,10 @@ func (s *Store) CreateOrder(ctx context.Context, o domain.Order, offers []domain
 				return fmt.Errorf("offer: %w", err)
 			}
 		}
-		if err := insertOutbox(ctx, tx, ev); err != nil {
-			return err
+		for _, ev := range evs {
+			if err := insertOutbox(ctx, tx, ev); err != nil {
+				return err
+			}
 		}
 		out, err = scanOrder(tx.QueryRow(ctx, `SELECT `+orderColList+` FROM orders WHERE id = $1`, o.ID))
 		return err

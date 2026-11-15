@@ -201,3 +201,20 @@ func OrderCancelled(o domain.Order, driver *uuid.UUID, by, reason string, at tim
 	return build("order.cancelled", SubjectOrderCancelled, at, trace,
 		orderCancelled{OrderID: o.ID, PassengerID: o.PassengerID, DriverID: driver, CancelledBy: by, Reason: reason, At: at.UTC()})
 }
+
+// SubjectOfferCreated — haydovchiga yangi taklif (Notification -> haydovchiga WS/push). Taklifni trip-order saqlaydi,
+// shuning uchun hodisani ham shu servis chiqaradi (offer_id = qabul qilishda ishlatiladigan ID).
+const SubjectOfferCreated = "izgo.offer.created.v1"
+
+type offerCreated struct {
+	OfferID   uuid.UUID `json:"offer_id"`
+	OrderID   uuid.UUID `json:"order_id"`
+	DriverID  uuid.UUID `json:"driver_id"`
+	ETAs      int       `json:"eta_s"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func OfferCreated(of domain.Offer, now time.Time, trace string) (Event, error) {
+	return build("offer.created", SubjectOfferCreated, now, trace,
+		offerCreated{OfferID: of.ID, OrderID: of.OrderID, DriverID: of.DriverID, ETAs: of.PickupETAs, ExpiresAt: of.ExpiresAt.UTC()})
+}
