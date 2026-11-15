@@ -13,6 +13,7 @@ RUN go mod download
 WORKDIR /src
 COPY shared/go.mod shared/
 COPY shared/go shared/go
+COPY shared/geo shared/geo
 COPY services/trip-order services/trip-order
 WORKDIR /src/services/trip-order
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/trip-order .
