@@ -5,6 +5,8 @@ export interface AppConfig {
   port: number;
   db: { host: string; port: number; user: string; password: string; name: string };
   natsUrl: string;
+  /** F-01: o'z NATS foydalanuvchisi va TLS CA (bo'sh bo'lsa — autentifikatsiyasiz/TLS'siz, testlar) */
+  nats?: { user?: string; pass?: string; caFile?: string };
   jwt: { publicKeyPem: string; issuer: string };
   uploads: {
     dir: string;
@@ -48,6 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       name: required(env, 'DB_NAME'),
     },
     natsUrl: env.NATS_URL || 'nats://nats:4222',
+    nats: { user: env.NATS_USER || undefined, pass: env.NATS_PASSWORD || undefined, caFile: env.NATS_CA_FILE || undefined },
     jwt: { publicKeyPem: pem, issuer: env.JWT_ISSUER || 'izgo-identity' },
     uploads: {
       dir: env.UPLOADS_DIR || './uploads',

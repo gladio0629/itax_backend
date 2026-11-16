@@ -28,7 +28,14 @@ data class WalletProperties(
     val payments: Payments = Payments(),
 ) {
     data class Jwt(val publicKeyPath: String = "/run/secrets/jwt/public.pem", val issuer: String = "izgo-identity")
-    data class Nats(val url: String = "nats://localhost:4222", val enabled: Boolean = true)
+    /** F-01: user/password — wallet'ning o'z NATS foydalanuvchisi; caFile — TLS CA (PEM). Bo'sh — autentifikatsiyasiz/TLS'siz. */
+    data class Nats(
+        val url: String = "nats://localhost:4222",
+        val enabled: Boolean = true,
+        val user: String = "",
+        val password: String = "",
+        val caFile: String = "",
+    )
     data class Payments(
         val mode: String = "mock",
         val publicBaseUrl: String = "http://localhost:8000",

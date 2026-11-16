@@ -10,7 +10,10 @@ name: izgo
 
 x-service-env: &service-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  NATS_URL: ${NATS_URL:-nats://nats:4222}
+  # F-01: NATS faqat TLS + har servisning o'z foydalanuvchisi (NATS_USER servis blokida, NATS_PASSWORD — Docker secret).
+  # .env dagi NATS_URL bu yerda ishlatilmaydi: shifrlanmagan ulanishga qaytib bo'lmasin.
+  NATS_URL: tls://nats:4222
+  NATS_CA_FILE: /run/secrets/mtls/ca.crt
 
 x-service-defaults: &service-defaults
   restart: unless-stopped
@@ -64,6 +67,8 @@ services:
       - "127.0.0.1:4222:4222"
     volumes:
       - ./infra/nats/nats.conf:/etc/nats/nats.conf:ro
+      - ./secrets/nats/auth.conf:/etc/nats/auth.conf:ro   # F-01: foydalanuvchilar/ruxsatlar (scripts/gen-nats-auth.sh)
+      - ./secrets/mtls/nats:/etc/nats/tls:ro               # F-01: server TLS sertifikati
       - nats_data:/data
     healthcheck:
       # monitoring porti (nats.conf: http_port 8222); JetStream ham tayyor bo'lishi kerak
@@ -115,6 +120,7 @@ services:
       dockerfile: services/identity/Dockerfile
     environment:
       <<: *service-env
+      NATS_USER: identity   # F-01: infra/nats/permissions.json
       PORT: "8010"
       DB_HOST: postgres
       DB_USER: identity_svc
@@ -169,6 +175,7 @@ services:
     build: ./services/driver
     environment:
       <<: *service-env
+      NATS_USER: driver   # F-01: infra/nats/permissions.json
       PORT: "8011"
       DB_HOST: postgres
       DB_USER: driver_svc
@@ -218,6 +225,7 @@ services:
       dockerfile: services/trip-order/Dockerfile
     environment:
       <<: *service-env
+      NATS_USER: trip-order   # F-01: infra/nats/permissions.json
       PORT: "8012"
       DB_HOST: postgres
       DB_USER: trip_order_svc
@@ -256,6 +264,7 @@ services:
       dockerfile: services/matching-geo/Dockerfile
     environment:
       <<: *service-env
+      NATS_USER: matching-geo   # F-01: infra/nats/permissions.json
       PORT: "8013"
       # Servislararo umumiy sir (pricing bilan bir xil INTERNAL_TOKENS). Bo'sh bo'lsa faqat matching-geo ishga tushmaydi.
       # INTERNAL_TOKENS: Docker secret — secrets/svc/matching-geo/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
@@ -287,6 +296,7 @@ services:
     build: ./services/wallet
     environment:
       <<: *service-env
+      NATS_USER: wallet   # F-01: infra/nats/permissions.json
       PORT: "8015"
       DB_HOST: postgres
       DB_USER: wallet_svc
@@ -318,6 +328,7 @@ services:
       dockerfile: services/backoffice/Dockerfile
     environment:
       <<: *service-env
+      NATS_USER: backoffice   # F-01: infra/nats/permissions.json
       PORT: "8017"
       DB_HOST: postgres
       DB_USER: backoffice_svc
@@ -399,6 +410,7 @@ services:
     build: ./services/notification
     environment:
       <<: *service-env
+      NATS_USER: notification   # F-01: infra/nats/permissions.json
       PORT: "8016"
       # Foydalanuvchi tokenlarini (REST va /ws) tekshirish uchun faqat public kalit
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem

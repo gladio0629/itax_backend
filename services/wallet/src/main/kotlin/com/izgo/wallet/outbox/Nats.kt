@@ -26,7 +26,12 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import java.io.FileInputStream
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
 import java.time.Duration
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 /** NATS ulanishi (sekin ulanadi: NATS hali ko'tarilmagan bo'lsa ham servis ishga tushadi). */
 @Component
@@ -39,15 +44,25 @@ class NatsConnection(private val props: WalletProperties) {
     @Synchronized
     fun connection(): Connection {
         conn?.takeIf { it.status == Connection.Status.CONNECTED }?.let { return it }
-        val c = Nats.connect(
-            Options.Builder().server(props.nats.url).maxReconnects(-1).connectionTimeout(Duration.ofSeconds(5)).build(),
-        )
+        val b = Options.Builder().server(props.nats.url).maxReconnects(-1).connectionTimeout(Duration.ofSeconds(5))
+        // F-01: o'z foydalanuvchisi (faqat izgo.payment.>, izgo.wallet.> ga yoza oladi) va TLS (dev CA)
+        if (props.nats.user.isNotBlank()) b.userInfo(props.nats.user, props.nats.password)
+        if (props.nats.caFile.isNotBlank()) b.sslContext(sslContextFor(props.nats.caFile))
+        val c = Nats.connect(b.build())
         log.info("NATS ulandi: {}", props.nats.url)
         conn = c
         return c
     }
 
     fun jetStream(): JetStream = connection().jetStream()
+
+    /** PEM CA (secrets/mtls/<servis>/ca.crt) ga ishonadigan TLS konteksti. */
+    private fun sslContextFor(caFile: String): SSLContext {
+        val ca = FileInputStream(caFile).use { CertificateFactory.getInstance("X.509").generateCertificate(it) }
+        val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); setCertificateEntry("izgo-ca", ca) }
+        val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(ks) }
+        return SSLContext.getInstance("TLS").apply { init(null, tmf.trustManagers, null) }
+    }
 
     @PreDestroy
     fun close() {

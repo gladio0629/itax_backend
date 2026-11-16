@@ -4,7 +4,7 @@
 #   secrets/mtls/ca.crt, ca.key                     CA (ca.key 0600 — konteynerlarga ULANMAYDI)
 #   secrets/mtls/<servis>/{tls.crt,tls.key,ca.crt}  CN=<servis>, SAN=DNS:<servis>; server+client auth; 825 kun
 #
-# Servislar ro'yxati — infra/mtls/policy.json. Idempotent: mavjud sertifikat qayta yaratilmaydi.
+# Servislar ro'yxati — infra/mtls/policy.json, qo'shimcha nats va redis (server TLS). Idempotent: mavjud sertifikat qayta yaratilmaydi.
 # Hozircha (bosqich 1) servislar sertifikatni ISHLATMAYDI — /run/secrets/mtls ga faqat ulangan.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,7 +18,8 @@ if [[ ! -f $D/ca.key ]]; then
   chmod 0644 "$D/ca.crt"
   echo "gen-mtls-certs: CA yaratildi" >&2
 fi
-for s in $(python3 -c 'import json;print(" ".join(json.load(open("infra/mtls/policy.json"))["services"]))'); do
+# servislar (policy.json) + infra serverlari (NATS, Redis — TLS server sertifikati)
+for s in $(python3 -c 'import json;print(" ".join(json.load(open("infra/mtls/policy.json"))["services"]))') nats redis; do
   sd="$D/$s"; mkdir -p "$sd"; chmod 0755 "$sd"
   [[ -f $sd/tls.crt ]] && continue
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$sd/tls.key" 2>/dev/null

@@ -42,6 +42,10 @@ wallet:
   nats:
     url: ${NATS_URL:nats://localhost:4222}
     enabled: ${NATS_ENABLED:true}
+    # F-01: o'z foydalanuvchisi (NATS_PASSWORD — /run/secrets/izgo dan) va TLS CA
+    user: ${NATS_USER:}
+    password: ${NATS_PASSWORD:}
+    ca-file: ${NATS_CA_FILE:}
   payments:
     # mock | real. Hozir faqat mock ishlaydi; real provayder kodi payment/providers/*.kt da kommentda.
     mode: ${PAYMENT_MODE:mock}

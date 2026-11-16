@@ -56,6 +56,9 @@ export class NatsService extends EventPublisher implements OnModuleInit, OnModul
       try {
         this.nc = await connect({
           servers: this.cfg.natsUrl,
+          user: this.cfg.nats?.user,
+          pass: this.cfg.nats?.pass,
+          tls: this.cfg.nats?.caFile ? { caFile: this.cfg.nats.caFile } : undefined,
           name: 'izgo-driver',
           maxReconnectAttempts: -1,
           reconnectTimeWait: 2000,

@@ -1,0 +1,50 @@
+{
+  "$comment": "F-01: har servis o'z NATS foydalanuvchisi bilan ulanadi va FAQAT o'z hodisalarini chiqara oladi (publish). consumes — qaysi stream'lardan consumer yaratib o'qiy oladi; streams — qaysi stream'larni yarata/yangilay oladi. Hodisa egalari shared/events/*.json (x-producer) va koddan olingan. scripts/gen-nats-auth.sh shundan secrets/nats/auth.conf yasaydi (parollar bilan). Hammasi bitta (global) account'da: JetStream stream'lari account'ga tegishli, servislar bir-birining hodisasini consumer orqali o'qiydi.",
+  "streams": {
+    "USER_EVENTS": ["izgo.user.>"],
+    "TRIP_ORDER_EVENTS": ["izgo.order.>", "izgo.trip.>"],
+    "MATCHING_EVENTS": ["izgo.offer.>"],
+    "DRIVER_EVENTS": ["izgo.driver.>"],
+    "WALLET_EVENTS": ["izgo.payment.>", "izgo.wallet.>"]
+  },
+  "users": {
+    "identity": {
+      "publish": ["izgo.user.>"],
+      "streams": ["USER_EVENTS"],
+      "consumes": []
+    },
+    "trip-order": {
+      "$comment": "offer.created ni ham chiqaradi (buyurtma qayta qidiruvga tushganda)",
+      "publish": ["izgo.order.>", "izgo.trip.>", "izgo.offer.>"],
+      "streams": ["TRIP_ORDER_EVENTS", "MATCHING_EVENTS"],
+      "consumes": []
+    },
+    "matching-geo": {
+      "publish": ["izgo.offer.>"],
+      "streams": ["MATCHING_EVENTS"],
+      "consumes": ["TRIP_ORDER_EVENTS"]
+    },
+    "wallet": {
+      "publish": ["izgo.payment.>", "izgo.wallet.>"],
+      "streams": ["WALLET_EVENTS"],
+      "consumes": ["TRIP_ORDER_EVENTS"]
+    },
+    "driver": {
+      "$comment": "driver.submitted; driver.approved — avtomatik tasdiqda (AUTO_APPROVE_ENABLED)",
+      "publish": ["izgo.driver.submitted.v1", "izgo.driver.approved.v1"],
+      "streams": ["DRIVER_EVENTS"],
+      "consumes": ["USER_EVENTS", "DRIVER_EVENTS"]
+    },
+    "backoffice": {
+      "publish": ["izgo.driver.approved.v1", "izgo.tariff.>"],
+      "streams": ["DRIVER_EVENTS"],
+      "consumes": ["DRIVER_EVENTS", "USER_EVENTS"]
+    },
+    "notification": {
+      "$comment": "faqat tinglaydi",
+      "publish": [],
+      "streams": [],
+      "consumes": ["TRIP_ORDER_EVENTS", "MATCHING_EVENTS", "DRIVER_EVENTS", "WALLET_EVENTS"]
+    }
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -21,18 +22,26 @@ type Conn struct {
 
 // Connect — NATS broker hali ko'tarilmagan bo'lsa ham servis ishga tushadi (ulanish fonda qayta uriniladi).
 func Connect(url string, log *slog.Logger) (*Conn, error) {
-	nc, err := nats.Connect(url,
+	opts := []nats.Option{
 		nats.Name("izgo-notification"),
 		nats.RetryOnFailedConnect(true),
 		nats.MaxReconnects(-1),
-		nats.ReconnectWait(2*time.Second),
+		nats.ReconnectWait(2 * time.Second),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			if err != nil {
 				log.Warn("nats uzildi", "err", err)
 			}
 		}),
 		nats.ReconnectHandler(func(c *nats.Conn) { log.Info("nats qayta ulandi", "url", c.ConnectedUrl()) }),
-	)
+	}
+	// F-01: har servisning o'z foydalanuvchisi (faqat o'z hodisalarini chiqaradi) va TLS. Bo'sh bo'lsa — eski xulq (testlar).
+	if u := os.Getenv("NATS_USER"); u != "" {
+		opts = append(opts, nats.UserInfo(u, os.Getenv("NATS_PASSWORD")))
+	}
+	if ca := os.Getenv("NATS_CA_FILE"); ca != "" {
+		opts = append(opts, nats.RootCAs(ca))
+	}
+	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("bus: nats ulanish: %w", err)
 	}
