@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Actor, AuditService, SYSTEM_ACTOR } from '../audit/audit.service';
 import { Errors } from '../common/errors';
+import { maskPhone } from '../common/pii';
 import { applyCursor, decodeCursor, DEFAULT_LIMIT, Page, toPage } from '../common/pagination';
 import { parseRange, todayRange } from '../common/time';
 import { APP_CONFIG, AppConfig } from '../config/configuration';
@@ -19,13 +20,8 @@ export interface QueueItemView {
   created_at: string; finished_at: string | null;
 }
 
-/** +998901234567 -> 998**___**67 (to'liq raqam faqat ishni boshlagan operatorga ko'rinadi) */
-export function maskPhone(phone: string | null): string | null {
-  if (!phone) return null;
-  const d = phone.replace(/\D/g, '');
-  if (d.length < 5) return '***';
-  return `${d.slice(0, 3)}**___**${d.slice(-2)}`;
-}
+/** +998901234567 -> 998**___**67 (to'liq raqam faqat ishni boshlagan operatorga ko'rinadi). Logdagi bilan bir format. */
+export { maskPhone };
 
 const snap = (q: QueueItem): Record<string, unknown> => ({
   id: q.id, kind: q.kind, subject_id: q.subjectId, status: q.status, assigned_to: q.assignedTo,

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/izgo/shared/go/pii"
 )
 
 // Rejimlar (SMS_MODE / EMAIL_MODE).
@@ -122,19 +124,7 @@ func (n *Notifier) SendEmail(ctx context.Context, email, code string) error {
 	return nil
 }
 
-// MaskPhone — "+998901234567" -> "+998*****67".
-func MaskPhone(p string) string {
-	if len(p) < 8 {
-		return "***"
-	}
-	return p[:4] + "*****" + p[len(p)-2:]
-}
+// MaskPhone / MaskEmail — logdagi ko'rinish (shared/go/pii): "998*******67", "a***@***.com".
+func MaskPhone(p string) string { return pii.MaskPhone(p) }
 
-// MaskEmail — "admin@example.com" -> "a***@example.com".
-func MaskEmail(e string) string {
-	at := strings.LastIndexByte(e, '@')
-	if at < 1 {
-		return "***"
-	}
-	return e[:1] + "***" + e[at:]
-}
+func MaskEmail(e string) string { return pii.MaskEmail(e) }

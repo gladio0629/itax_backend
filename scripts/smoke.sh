@@ -46,10 +46,13 @@ otp_login() {
   since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   r=$(req POST /api/v1/auth/otp/request "{\"phone\":\"$phone\"}")
   [[ $(status "$r") == 202 ]] || fail "otp/request ($phone): $r"
-  # SMS mock: identity kodni JSON logga yozadi
+  # SMS mock: identity kodni JSON logga yozadi. Telefon logda maskalangan (shared/go/pii: "998*******67"),
+  # shuning uchun maskalangan ko'rinish bo'yicha qidiramiz (--since bilan oyna tor: boshqa raqam bilan adashmaydi).
+  local d=${phone//[!0-9]/} masked
+  masked="${d:0:3}$(printf '%*s' $(( ${#d} - 5 )) '' | tr ' ' '*')${d: -2}"
   for _ in $(seq 1 10); do
     code=$(docker compose logs --no-log-prefix --since "$since" identity 2>/dev/null \
-      | grep -F "\"phone\":\"$phone\"" | grep -o '"code":"[0-9]*"' | tail -n1 | grep -o '[0-9]*' || true)
+      | grep -F -e "\"phone\":\"$phone\"" -e "\"phone\":\"$masked\"" | grep -o '"code":"[0-9]*"' | tail -n1 | grep -o '[0-9]*' || true)
     [[ -n "$code" ]] && break
     sleep 1
   done

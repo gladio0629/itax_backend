@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/izgo/notification/internal/pii"
 )
 
 var ErrUnknownTemplate = errors.New("sms: unknown template")
@@ -60,9 +62,5 @@ func (m Mock) Send(ctx context.Context, phone, text string) error {
 	return nil
 }
 
-func MaskPhone(p string) string {
-	if len(p) < 8 {
-		return "***"
-	}
-	return p[:4] + "*****" + p[len(p)-2:]
-}
+// MaskPhone — logdagi telefon: "+998901234567" -> "998*******67" (internal/pii).
+func MaskPhone(p string) string { return pii.MaskPhone(p) }

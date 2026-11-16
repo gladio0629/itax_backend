@@ -3,6 +3,7 @@ module github.com/izgo/notification
 go 1.26.0
 
 require (
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/coder/websocket v1.8.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	github.com/alicebob/miniredis/v2 v2.40.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect

@@ -27,7 +27,7 @@ func TestSMSMock(t *testing.T) {
 		t.Fatalf("%d %s", r.Status, r.Raw)
 	}
 	logs := e.logs.String()
-	if !strings.Contains(logs, "SMS (mock") || !strings.Contains(logs, "+998*****67") {
+	if !strings.Contains(logs, "SMS (mock") || !strings.Contains(logs, "998*******67") {
 		t.Errorf("log: %s", logs)
 	}
 	if strings.Contains(logs, "482913") || strings.Contains(logs, "+998901234567") {
