@@ -169,6 +169,23 @@ describe('Driver service (e2e)', () => {
       expect((await post(4, { accept_terms: false })).status).toBe(422);
       // 1-qadam body'si 2-qadamga mos kelmaydi
       expect((await post(2, step1)).status).toBe(422);
+      // F-09: har qadamda faqat o'sha qadam maydonlari (ichma-ich obyektlarda ham)
+      const extraFields: [number, object, string][] = [
+        [1, { ...step1, phone: '+998900000000' }, 'phone'],
+        [1, { ...step1, role: 'admin' }, 'role'],
+        [2, { ...step2, state: 'active' }, 'state'],
+        [2, { car: { ...step2.car, owner_id: USER_B } }, 'car.owner_id'],
+        [3, { documents: [], status: 'approved' }, 'status'],
+        [3, { documents: [{ kind: 'selfie', document_id: USER_B, driver_id: USER_B }] }, 'documents.0.driver_id'],
+        [4, { accept_terms: true, state: 'active' }, 'state'],
+      ];
+      for (const [s, body, field] of extraFields) {
+        const r = await post(s, body);
+        expect(r.status).toBe(422);
+        expect(r.body.error.key).toBe('VALIDATION_ERROR');
+        expect(r.body.error.params.fields[field]).toBe('whitelistValidation');
+      }
+      expect((await http().get('/api/v1/drivers/me').set('Authorization', a)).body.state).toBe('draft');
     });
   });
 
@@ -215,7 +232,10 @@ describe('Driver service (e2e)', () => {
       expect((await put(path, jpeg.subarray(1))).body.error.params.fields).toEqual({ size_bytes: 'mismatch' });
       expect((await put(path, jpeg, 'image/png')).body.error.params.fields).toEqual({ content_type: 'mismatch' });
 
-      expect((await put(path.replace(/signature=./, 'signature=0'), jpeg)).status).toBe(403);
+      // Birinchi hex belgi har doim boshqasiga almashadi (aks holda 1/16 ehtimol bilan imzo o'zgarmay qolardi)
+      const tampered = path.replace(/signature=([0-9a-f])/i, (_m, c: string) => `signature=${c.toLowerCase() === '0' ? '1' : '0'}`);
+      expect(tampered).not.toBe(path);
+      expect((await put(tampered, jpeg)).status).toBe(403);
       expect((await put(path.replace(/expires=\d+/, 'expires=9999999999'), jpeg)).status).toBe(403);
       expect((await put(`/api/v1/drivers/documents/${res.body.document_id}/content`, jpeg)).status).toBe(403);
 
@@ -295,6 +315,7 @@ describe('Driver service (e2e)', () => {
       for (const bad of [
         { state: 'active' }, { rating: 5 }, { phone: '+998900000000' }, { id: USER_B }, { user_id: USER_B },
         { trips_count: 100 }, { car: { brand: 'X' } }, { first_name: 'A', state: 'active' },
+        { role: 'admin' }, { status: 'active' }, { firstName: 'Camel' }, { last_name: 'B', phone: '+998900000000' },
       ]) {
         const r = await http().put('/api/v1/drivers/me').set('Authorization', a).send(bad);
         expect(r.status).toBe(422);

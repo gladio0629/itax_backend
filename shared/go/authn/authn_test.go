@@ -69,6 +69,32 @@ func TestVerify(t *testing.T) {
 	mut("sub UUID emas", func(k *tok) { k.sub = "x" })
 	bad["boshqa kalit"] = sign(t, other, ok)
 	bad["buzuq"] = "abc.def.ghi"
+	okClaims := jwt.MapClaims{"iss": issuer, "sub": uid.String(), "aud": []string{"driver"}, "exp": time.Now().Add(time.Minute).Unix(),
+		"typ": "access", "sid": ok.sid, "role": "driver"}
+	// alg=none — imzosiz token
+	if s, err := jwt.NewWithClaims(jwt.SigningMethodNone, okClaims).SignedString(jwt.UnsafeAllowNoneSignatureType); err == nil {
+		bad["alg none"] = s
+	} else {
+		t.Fatal(err)
+	}
+	// algoritm almashtirish: public kalit HMAC siri sifatida
+	if s, err := jwt.NewWithClaims(jwt.SigningMethodHS256, okClaims).SignedString([]byte(pub)); err == nil {
+		bad["HS256 public kalit bilan"] = s
+	} else {
+		t.Fatal(err)
+	}
+	// exp yo'q — muddatsiz token qabul qilinmaydi
+	noExp := jwt.MapClaims{}
+	for k, v := range okClaims {
+		if k != "exp" {
+			noExp[k] = v
+		}
+	}
+	if s, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, noExp).SignedString(priv); err == nil {
+		bad["exp yo'q"] = s
+	} else {
+		t.Fatal(err)
+	}
 	for name, raw := range bad {
 		if _, err := v.Verify(t.Context(), raw); err != authn.ErrInvalid {
 			t.Errorf("%s: %v", name, err)
