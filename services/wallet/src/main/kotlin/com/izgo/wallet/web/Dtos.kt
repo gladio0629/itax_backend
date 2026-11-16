@@ -58,6 +58,8 @@ data class CheckLimitResponse(
 
 enum class CallbackStatus(@get:JsonValue val wire: String) { PAID("paid"), FAILED("failed") }
 
+/** Provayder callback'i: real Payme/Click/Hamkorbank qo'shimcha maydonlar yuboradi — bu yerda qat'iy rejim (F-09) qo'llanmaydi. */
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 data class PaymentCallbackRequest(
     val paymentId: UUID,
     val provider: Provider,

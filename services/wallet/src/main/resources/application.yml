@@ -13,6 +13,9 @@ spring:
     default-property-inclusion: always
     serialization:
       write-dates-as-timestamps: false
+    deserialization:
+      # F-09: so'rov tanasidagi noma'lum maydon — 422 VALIDATION_ERROR {"<maydon>": "unknown_field"} (Go/NestJS bilan bir xil)
+      fail-on-unknown-properties: true
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:wallet_db}
     username: ${DB_USER:wallet_svc}

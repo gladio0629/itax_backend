@@ -46,8 +46,13 @@ class ErrorHandler {
     }
 
     @ExceptionHandler(ServerWebInputException::class)
-    fun input(e: ServerWebInputException): ResponseEntity<ErrorBody> =
-        validation(mapOf((e.methodParameter?.parameterName ?: "body") to "invalid"))
+    fun input(e: ServerWebInputException): ResponseEntity<ErrorBody> {
+        // F-09: noma'lum maydon — Go/NestJS bilan bir xil javob {"fields": {"<maydon>": "unknown_field"}}
+        val unknown = generateSequence(e as Throwable) { it.cause }
+            .filterIsInstance<com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException>().firstOrNull()
+        if (unknown != null) return validation(mapOf(unknown.propertyName to "unknown_field"))
+        return validation(mapOf((e.methodParameter?.parameterName ?: "body") to "invalid"))
+    }
 
     @ExceptionHandler(ResponseStatusException::class)
     fun status(e: ResponseStatusException): ResponseEntity<ErrorBody> = when {
