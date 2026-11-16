@@ -21,6 +21,11 @@ docker compose ps             # 3. hammasi "healthy" bo'lishini kuting (birinchi
 `./scripts/up.sh` `docker compose up -d --build` dan oldin quyidagilarni bajaradi (bor bo'lsa tegmaydi):
 
 - `secrets/jwt/{private,public}.pem` — identity uchun Ed25519 kalitlari (`scripts/gen-jwt-keys.sh`);
+- **Sirlar (F-16, Docker secrets):** `.env` da maxfiy qiymat yo'q. `./scripts/up.sh` → `scripts/gen-secrets.sh` ularni `secrets/` ostida yaratadi
+  (`secrets/svc/<servis>/<NOM>` → konteynerda `/run/secrets/izgo/<NOM>`; Go `shared/go/secretenv`, NestJS `src/config/secret-env.ts`,
+  wallet Spring `configtree`). Har servisning o'z DB paroli bor (F-25; `infra/postgres/sync-passwords.sh` mavjud volume'ni moslaydi),
+  servislararo tokenlar har chaqiruvchiga alohida (F-02 bosqich 1, `infra/mtls/policy.json` → `scripts/gen-internal-tokens.sh`).
+  `docker compose up` dan oldin kamida bir marta `./scripts/up.sh` (yoki `scripts/gen-secrets.sh`) ishga tushiring.
 - `.env` ga `UPLOAD_SIGNING_SECRET` va `INTERNAL_TOKENS` (tasodifiy, kamida 16 belgi).
 
 `docker compose up -d` ni to'g'ridan-to'g'ri ishlatsangiz, bularni o'zingiz bering: `INTERNAL_TOKENS` bo'sh bo'lsa
@@ -36,7 +41,7 @@ docker compose ps             # 3. hammasi "healthy" bo'lishini kuting (birinchi
 
 ## Servislar va portlar
 
-Host'ga faqat Kong (`8000` proxy, `8001` admin) va infra portlari ochiq. Ilova servislariga tashqaridan faqat
+Host'ga faqat Kong proxy (`8000`) ochiq; infra portlari (5432, 6379, 4222) faqat `127.0.0.1` da, Kong Admin API (`8001`) faqat Kong konteyneri ichida (Etap 7). Ilova servislariga tashqaridan faqat
 Kong orqali, ichkaridan — `izgo` Docker tarmog'ida `http://<servis>:<port>` orqali kiriladi.
 
 | Servis        | Til     | Port | Kong orqali (public)                                       | Baza            | `/internal/*` (faqat Docker tarmog'i) |
@@ -61,7 +66,7 @@ Kong orqali, ichkaridan — `izgo` Docker tarmog'ida `http://<servis>:<port>` or
 | postgres  | 5432 (host: `POSTGRES_HOST_PORT`) | Bitta instans, har servisga alohida baza va user (`<nom>_svc`)  |
 | redis     | 6379        | Oddiy Redis (AOF yoqilgan)                                      |
 | nats      | 4222        | JetStream yoqilgan (monitoring `8222` faqat tarmoq ichida)      |
-| kong      | 8000 / 8001 | Proxy / Admin API, DB-less (`gateway/kong.yml`)                 |
+| kong      | 8000 (8001 ichki) | Proxy / Admin API (faqat konteyner ichida), DB-less (`gateway/kong.yml`) |
 
 ## Muhit o'zgaruvchilari
 
@@ -74,7 +79,7 @@ Qiymatlar `.env` da (repoga kirmaydi); `.env.example` da faqat nomlar. Bo'sh qol
 | `REDIS_URL`, `NATS_URL` | barcha servislar | default `redis://redis:6379`, `nats://nats:4222` |
 | `INTERNAL_TOKENS` | identity, pricing, matching-geo, wallet, notification, backoffice (trip-order — compose'da bor, hali o'qimaydi) | `X-Internal-Token` sirlari (vergul bilan bir nechta, har biri ≥16 belgi); `up.sh` yozadi |
 | `JWT_ISSUER` | identity va JWT tekshiruvchi servislar | default `izgo-identity`; kalitlar `secrets/jwt/` dan mount qilinadi |
-| `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PHONE`, `ADMIN_BOOTSTRAP_NAME` | identity, backoffice | birinchi superadmin (ixtiyoriy) |
+| `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PHONE`, `ADMIN_BOOTSTRAP_NAME` | identity | birinchi superadmin (ixtiyoriy) |
 | `PRICING_URL`, `MATCHING_URL`, `WALLET_URL` | trip-order | default `http://pricing:8014`, `http://matching-geo:8013`, `http://wallet:8015` — mock'lar real HTTP ga almashtirilganda |
 | `IDENTITY_INTERNAL_URL` | backoffice | default `http://identity:8010` (xodim yaratish) |
 | `UPLOAD_SIGNING_SECRET`, `PUBLIC_BASE_URL`, `AUTO_APPROVE_*`, `APPROVAL_SYSTEM_ACTOR_ID` | driver | hujjat yuklash imzosi (`up.sh` yozadi), demo avto-tasdiq |
@@ -190,7 +195,7 @@ NATS subject: `izgo.<event>.v1` (masalan `izgo.order.created.v1`).
 - Ikki kishi tasdig'i: tuzatishlar (`wallet/correction`) va tariflar `pending_approval`; yaratgan xodim o'zi tasdiqlay/rad eta olmaydi.
 - Audit (`audit_log`): har yozish amali biznes o'zgarishi bilan bir tranzaksiyada; jadval DB trigger'i bilan o'zgarmas (UPDATE/DELETE/TRUNCATE taqiqlangan).
 - Operator navbati `izgo.driver.submitted.v1` dan to'ldiriladi; `resolved` yakunlangan haydovchi arizasi uchun `izgo.driver.approved.v1` chiqadi (`PUBLISH_APPROVED_ON_RESOLVED`).
-- Xodim yaratish identity bilan HAQIQIY HTTP orqali: `POST {IDENTITY_INTERNAL_URL}/internal/identity/staff` (`X-Internal-Token` = `INTERNAL_TOKENS`). Identity xodim ID sini o'zi beradi (token `sub`), backoffice shuni ishlatadi. 409 → `STAFF_PHONE_TAKEN`/`STAFF_EMAIL_TAKEN`; identity javob bermasa → 502 `IDENTITY_UNAVAILABLE`, xodim yaratilmaydi. Tahrirlash/bloklash/arxivlash: `PUT {IDENTITY_INTERNAL_URL}/internal/identity/staff/{id}` (`{phone, email, role, name, active}`, faqat yuborilganlar o'zgaradi); identity rad etsa backoffice tranzaksiyasi bekor bo'ladi.
+- Xodim yaratish identity bilan HAQIQIY HTTP orqali: `POST {IDENTITY_INTERNAL_URL}/internal/identity/staff` (`X-Internal-Token` = `INTERNAL_TOKENS`). Identity xodim ID sini o'zi beradi (token `sub`), backoffice shuni ishlatadi. 409 → `STAFF_PHONE_TAKEN`/`STAFF_EMAIL_TAKEN`; identity javob bermasa → 502 `IDENTITY_UNAVAILABLE`, xodim yaratilmaydi. Superadmin (identity'da bootstrap yoki `seed-superadmin.sh` bilan yaratilgan) backoffice'ga birinchi kirganda uning yozuvi `GET {IDENTITY_INTERNAL_URL}/internal/identity/staff/{id}` dagi email/telefon/ism bilan yaratiladi (identity aktiv superadmin deb tasdiqlamasa — 403, identity javob bermasa — 502). Tahrirlash/bloklash/arxivlash: `PUT {IDENTITY_INTERNAL_URL}/internal/identity/staff/{id}` (`{phone, email, role, name, active}`, faqat yuborilganlar o'zgaradi); identity rad etsa backoffice tranzaksiyasi bekor bo'ladi.
 - Driver/user lookup (operator navbatida telefon) HAQIQIY HTTP orqali: `GET {DRIVER_INTERNAL_URL}/internal/driver/drivers/{id}`, `GET {IDENTITY_INTERNAL_URL}/internal/identity/users/{id}` → `{id, phone, firstName, lastName, role}` (compose'da `INTERNAL_LOOKUP_MODE=http`; kod defaulti va testlar — `mock`). Lookup xatosi navbatni buzmaydi — telefon `null` qaytadi.
 - Driver/passenger CRUD, order, wallet, stats hozir MOCK portlar (`src/ports/`) orqali.
 - Testlar: `cd services/backoffice && npm test` (pg-mem, Postgres/NATS shart emas).

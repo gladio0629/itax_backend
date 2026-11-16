@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/izgo/shared/go/migrate"
+	"github.com/izgo/shared/go/secretenv"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,12 +24,13 @@ import (
 	"github.com/izgo/identity/internal/postgres"
 	"github.com/izgo/identity/internal/token"
 	"github.com/izgo/identity/migrations"
+	"github.com/izgo/shared/go/pii"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "identity")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: pii.ReplaceAttr})).With("service", "identity")
 
 	// distroless'da shell/curl yo'q: docker healthcheck uchun `/identity healthcheck`.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -59,6 +61,14 @@ func healthcheck() int {
 }
 
 func run(log *slog.Logger) error {
+	// F-16: Docker secrets (SECRETS_DIR, default /run/secrets/izgo) — config o'qilishidan OLDIN
+	secrets, err := secretenv.LoadDefault()
+	if err != nil {
+		return err
+	}
+	if len(secrets) > 0 {
+		log.Info("sirlar fayldan yuklandi", "names", secrets)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -113,13 +123,16 @@ func run(log *slog.Logger) error {
 		EmailMode: cfg.EmailMode, EmailProvider: cfg.EmailProvider, EmailAPIKey: cfg.EmailAPIKey, EmailFrom: cfg.EmailFrom,
 		OTPTTL: cfg.OTPTTL,
 	}, auth.LogNotifier{Log: log}, log)
+	// F-04: kunlik SMS byudjeti — barcha OTP SMS'lari shu yerdan o'tadi; oshsa logga ALERT (yuborish to'xtatilmaydi).
+	budgeted := &notify.SMSBudget{Next: notifier, RDB: rdb, Limit: cfg.SMSDailyBudget, Log: log}
 
 	svc := auth.NewService(auth.Options{
 		AccessTTL: cfg.AccessTTL, RefreshTTL: cfg.RefreshTTL, AdminTTL: cfg.AdminTTL,
 		OTPTTL: cfg.OTPTTL, OTPResend: cfg.OTPResend, LimitWindow: cfg.OTPLimitWindow,
 		OTPMaxAttempts: cfg.OTPMaxAttempts, PhoneLimit: cfg.OTPPhoneLimit, IPLimit: cfg.OTPIPLimit,
-		Dev: dev,
-	}, repo, cache.NewOTP(rdb), cache.NewBlacklist(rdb), tokens, notifier, log)
+		PhoneBlock: cfg.OTPPhoneBlock,
+		Dev:        dev,
+	}, repo, cache.NewOTP(rdb), cache.NewBlacklist(rdb), tokens, budgeted, log)
 	svc.OnEvent(relay.Kick)
 
 	if cfg.AdminBootstrapEmail != "" {

@@ -19,7 +19,9 @@ import (
 	"github.com/izgo/notification/internal/config"
 	"github.com/izgo/notification/internal/events"
 	"github.com/izgo/notification/internal/httpapi"
+	"github.com/izgo/notification/internal/pii"
 	"github.com/izgo/notification/internal/push"
+	"github.com/izgo/notification/internal/secretenv"
 	"github.com/izgo/notification/internal/service"
 	"github.com/izgo/notification/internal/sms"
 	"github.com/izgo/notification/internal/store"
@@ -27,7 +29,7 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "notification")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: pii.ReplaceAttr})).With("service", "notification")
 
 	// distroless'da shell/curl yo'q: docker healthcheck uchun `/notification healthcheck`.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -57,6 +59,14 @@ func healthcheck() int {
 }
 
 func run(log *slog.Logger) error {
+	// F-16: Docker secrets (SECRETS_DIR, default /run/secrets/izgo) — config o'qilishidan OLDIN
+	secrets, err := secretenv.LoadDefault()
+	if err != nil {
+		return err
+	}
+	if len(secrets) > 0 {
+		log.Info("sirlar fayldan yuklandi", "names", secrets)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err

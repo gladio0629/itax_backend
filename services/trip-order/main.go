@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/izgo/shared/go/migrate"
+	"github.com/izgo/shared/go/secretenv"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/izgo/shared/go/authn"
+	"github.com/izgo/shared/go/pii"
 	"github.com/izgo/trip-order/internal/config"
 	"github.com/izgo/trip-order/internal/events"
 	"github.com/izgo/trip-order/internal/external"
@@ -28,7 +30,7 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "trip-order")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: pii.ReplaceAttr})).With("service", "trip-order")
 
 	// distroless'da shell/curl yo'q: docker healthcheck uchun `/trip-order healthcheck`.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -58,6 +60,14 @@ func healthcheck() int {
 }
 
 func run(log *slog.Logger) error {
+	// F-16: Docker secrets (SECRETS_DIR, default /run/secrets/izgo) — config o'qilishidan OLDIN
+	secrets, err := secretenv.LoadDefault()
+	if err != nil {
+		return err
+	}
+	if len(secrets) > 0 {
+		log.Info("sirlar fayldan yuklandi", "names", secrets)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err

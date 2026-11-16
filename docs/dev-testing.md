@@ -7,8 +7,8 @@ Everything here is for a **local** stack only. Dev mode refuses to start in prod
 Needs Docker with Compose v2, `openssl`, `curl` and `python3`.
 
 ```bash
-cp .env.example .env          # first time only; fill POSTGRES_USER and POSTGRES_PASSWORD
-./scripts/up.sh               # generates JWT keys + INTERNAL_TOKENS / UPLOAD_SIGNING_SECRET if missing, builds, starts
+cp .env.example .env          # first time only; fill POSTGRES_USER (secrets are NOT in .env — see below)
+./scripts/up.sh               # generates JWT keys + secrets/ (scripts/gen-secrets.sh), syncs DB passwords, builds, starts
 docker compose ps             # wait until every service is "healthy" (first build takes a few minutes)
 ./scripts/smoke.sh            # optional: OTP -> token -> profile -> order -> driver GPS through Kong
 ```
@@ -81,6 +81,9 @@ SMS and email are mocks (`SMS_MODE=mock`, `EMAIL_MODE=mock`). The code is writte
 ```bash
 docker compose logs identity | grep code
 ```
+
+The phone and email in that line are masked like every other log line (`998*******67`, `a***@***.test`), so match
+the code by the last two digits of the phone you used. The code itself is printed only in mock mode.
 
 ## 6. Making the driver receive offers
 

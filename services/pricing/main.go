@@ -20,12 +20,14 @@ import (
 	"github.com/izgo/pricing/migrations"
 	"github.com/izgo/shared/geo"
 	"github.com/izgo/shared/go/migrate"
+	"github.com/izgo/shared/go/pii"
+	"github.com/izgo/shared/go/secretenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "pricing")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: pii.ReplaceAttr})).With("service", "pricing")
 
 	// distroless'da shell/curl yo'q: docker healthcheck uchun `/pricing healthcheck`.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -55,6 +57,14 @@ func healthcheck() int {
 }
 
 func run(log *slog.Logger) error {
+	// F-16: Docker secrets (SECRETS_DIR, default /run/secrets/izgo) — config o'qilishidan OLDIN
+	secrets, err := secretenv.LoadDefault()
+	if err != nil {
+		return err
+	}
+	if len(secrets) > 0 {
+		log.Info("sirlar fayldan yuklandi", "names", secrets)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err

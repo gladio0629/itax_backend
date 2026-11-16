@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/izgo/shared/go/authn"
+	"github.com/izgo/shared/go/secretenv"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,11 +22,12 @@ import (
 	"github.com/izgo/matching-geo/internal/service"
 	"github.com/izgo/matching-geo/internal/store"
 	"github.com/izgo/shared/geo"
+	"github.com/izgo/shared/go/pii"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "matching-geo")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: pii.ReplaceAttr})).With("service", "matching-geo")
 
 	// distroless'da shell/curl yo'q: docker healthcheck uchun `/matching-geo healthcheck`.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
@@ -55,6 +57,14 @@ func healthcheck() int {
 }
 
 func run(log *slog.Logger) error {
+	// F-16: Docker secrets (SECRETS_DIR, default /run/secrets/izgo) — config o'qilishidan OLDIN
+	secrets, err := secretenv.LoadDefault()
+	if err != nil {
+		return err
+	}
+	if len(secrets) > 0 {
+		log.Info("sirlar fayldan yuklandi", "names", secrets)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -82,10 +92,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	st := store.New(rdb, store.Options{LocationTTL: cfg.LocationTTL, BusyTTL: cfg.BusyTTL})
+	st := store.New(rdb, store.Options{LocationTTL: cfg.LocationTTL, BusyTTL: cfg.BusyTTL, StationaryAfter: cfg.StationaryAfter})
 	svc := service.New(st, router, nats, service.Options{
 		MaxSpeedKMH: cfg.MaxSpeedKMH, MinJumpM: cfg.MinJumpM, DefaultRadiusM: cfg.DefaultRadiusM, MaxRadiusM: cfg.MaxRadiusM,
-		MaxCandidates: cfg.MaxCandidates, OfferTTL: cfg.OfferTTL,
+		MaxCandidates: cfg.MaxCandidates, OfferTTL: cfg.OfferTTL, StationaryAfter: cfg.StationaryAfter,
 	}, log)
 
 	// order.accepted -> haydovchi busy; trip.completed / trip.cancelled -> available (Trip & Order hodisalari).

@@ -1,0 +1,15 @@
+{
+  "$comment": "F-02: kim kimni chaqira oladi (servislararo /internal/*). Bosqich 1: har chaqiruvchining O'Z X-Internal-Token'i bor; chaqiriluvchi faqat shu ro'yxatdagi chaqiruvchilar tokenini qabul qiladi (scripts/gen-internal-tokens.sh). Bosqich 2: xuddi shu ro'yxat mTLS sertifikat CN bo'yicha tekshiriladi (scripts/gen-mtls-certs.sh). Ro'yxat koddagi chaqiruvlardan olingan.",
+  "version": 1,
+  "services": {
+    "identity":     { "port": 8010, "callers": ["backoffice"],            "paths": ["/internal/identity/staff", "/internal/identity/users"] },
+    "driver":       { "port": 8011, "callers": ["backoffice"],            "paths": ["/internal/driver/drivers", "/internal/driver/stats"] },
+    "trip-order":   { "port": 8012, "callers": ["backoffice"],            "paths": ["/internal/orders"] },
+    "matching-geo": { "port": 8013, "callers": ["trip-order", "driver"],  "paths": ["/internal/matching/find", "/internal/matching/route", "/internal/matching/drivers"] },
+    "pricing":      { "port": 8014, "callers": ["trip-order"],            "paths": ["/internal/pricing/calculate"] },
+    "wallet":       { "port": 8015, "callers": ["trip-order"],            "paths": ["/internal/wallet/check-limit", "/internal/wallet/payment-callback"] },
+    "backoffice":   { "port": 8017, "callers": [],                        "paths": [] },
+    "notification": { "port": 8016, "callers": [],                        "paths": ["/internal/notification/sms", "/internal/notification/device"],
+                      "$comment": "Hozir hech kim chaqirmaydi (identity SMS'ni o'zi yuboradi) — ichki API yopiq." }
+  }
+}

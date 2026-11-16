@@ -2,8 +2,8 @@ name: izgo
 
 # Ishga tushirishdan oldin: cp .env.example .env  (va qiymatlarni to'ldiring)
 # Barcha servislar bitta ichki "izgo" tarmog'ida. Ilova servislariga tashqaridan
-# faqat Kong (8000) orqali kiriladi; host portlari faqat Kong (8000/8001) va infra
-# (5432, 6379, 4222) uchun ochiq. Pricing, Risk, Doc-scanner Kong'da ham yo'q —
+# faqat Kong (8000) orqali kiriladi. Kong Admin API (8001) faqat Kong konteyneri ichida;
+# infra (5432, 6379, 4222) faqat host'ning 127.0.0.1 iga bog'langan — LAN'dan ochilmaydi. Pricing, Risk, Doc-scanner Kong'da ham yo'q —
 # ularni faqat ichki servislar chaqiradi. Notification'dan Kong'da faqat
 # /api/v1/notifications va /ws ochiq; matching-geo'dan faqat POST /api/v1/location/update.
 # /internal/* yo'llari Kong'da yo'q.
@@ -23,20 +23,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER .env da berilishi kerak}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}
+      # F-16/F-25: superuser paroli va har servis DB paroli fayllardan (scripts/gen-secrets.sh). Servislar superuser
+      # parolini bilmaydi; har biri faqat o'z bazasiga ulana oladi (init-databases.sh / sync-passwords.sh).
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres/POSTGRES_PASSWORD
       POSTGRES_DB: postgres
-      # Ixtiyoriy: har servis bazasi uchun alohida parol (bo'sh bo'lsa POSTGRES_PASSWORD ishlatiladi)
-      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-}
-      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:-}
-      TRIP_ORDER_DB_PASSWORD: ${TRIP_ORDER_DB_PASSWORD:-}
-      PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:-}
-      WALLET_DB_PASSWORD: ${WALLET_DB_PASSWORD:-}
-      BACKOFFICE_DB_PASSWORD: ${BACKOFFICE_DB_PASSWORD:-}
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+      - ./infra/postgres/sync-passwords.sh:/usr/local/bin/izgo-sync-passwords.sh:ro
+      - ./secrets/postgres:/run/secrets/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
       interval: 5s
@@ -49,7 +46,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -64,7 +61,7 @@ services:
     restart: unless-stopped
     command: ["-c", "/etc/nats/nats.conf", "-js"]
     ports:
-      - "4222:4222"
+      - "127.0.0.1:4222:4222"
     volumes:
       - ./infra/nats/nats.conf:/etc/nats/nats.conf:ro
       - nats_data:/data
@@ -83,14 +80,16 @@ services:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /kong/kong.yml
       KONG_PROXY_LISTEN: 0.0.0.0:8000
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      # Admin API faqat konteyner ichida (127.0.0.1): na LAN, na izgo tarmog'idagi boshqa konteynerlar (DB-less'da
+      # POST /config butun gateway'ni almashtiradi). Kerak bo'lsa (image'da curl yo'q):
+      #   docker compose exec kong resty -e 'ngx.say(require("resty.http").new():request_uri("http://127.0.0.1:8001/status").body)'
+      KONG_ADMIN_LISTEN: 127.0.0.1:8001
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
     ports:
       - "8000:8000"
-      - "8001:8001"
     volumes:
       - ./gateway/kong.yml:/kong/kong.yml:ro
     healthcheck:
@@ -120,8 +119,7 @@ services:
       DB_HOST: postgres
       DB_USER: identity_svc
       DB_NAME: identity_db
-      # init-databases.sh bilan bir xil qoida: IDENTITY_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
+      # DB_PASSWORD: Docker secret — secrets/svc/identity/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
       # Ed25519 kalitlari: ./scripts/gen-jwt-keys.sh  ->  secrets/jwt/{private,public}.pem
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt/private.pem
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
@@ -132,15 +130,15 @@ services:
       ADMIN_BOOTSTRAP_PHONE: ${ADMIN_BOOTSTRAP_PHONE:-}
       ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-Superadmin}
       # Ichki API (/internal/identity/*) uchun X-Internal-Token; bo'sh bo'lsa servis ishga tushmaydi
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/identity/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       # OTP SMS (smsxabarnoma.uz): SMS_MODE=real va kalit bo'lsa yuboriladi, aks holda logga (mock)
       SMS_MODE: ${SMS_MODE:-mock}
       SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-https://smsxabarnoma.uz/api/v1}
-      SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
+      # SMS_PROVIDER_KEY: Docker secret — secrets/svc/identity/SMS_PROVIDER_KEY -> /run/secrets/izgo/SMS_PROVIDER_KEY (scripts/gen-secrets.sh)
       # Admin email kodi (Resend): EMAIL_MODE=real va kalit bo'lsa yuboriladi, aks holda logga (mock)
       EMAIL_MODE: ${EMAIL_MODE:-mock}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
-      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      # EMAIL_API_KEY: Docker secret — secrets/svc/identity/EMAIL_API_KEY -> /run/secrets/izgo/EMAIL_API_KEY (scripts/gen-secrets.sh)
       EMAIL_FROM: ${EMAIL_FROM:-onboarding@resend.dev}
       # Muhit nomi: production/prod bo'lsa DEV_MODE bilan servis ishga tushmaydi
       APP_ENV: ${APP_ENV:-development}
@@ -152,6 +150,8 @@ services:
       DEV_TEST_EMAILS: ${DEV_TEST_EMAILS:-}
     volumes:
       - ./secrets/jwt:/run/secrets/jwt:ro
+      - ./secrets/svc/identity:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/identity:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8010"]
     healthcheck:
       test: ["CMD", "/identity", "healthcheck"]
@@ -173,14 +173,13 @@ services:
       DB_HOST: postgres
       DB_USER: driver_svc
       DB_NAME: driver_db
-      # init-databases.sh bilan bir xil qoida: DRIVER_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${DRIVER_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
+      # DB_PASSWORD: Docker secret — secrets/svc/driver/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
       # Identity public.pem (JWT tekshirish uchun faqat public kalit): ./scripts/gen-jwt-keys.sh
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
-      # Imzolangan yuklash URL lari uchun HMAC kaliti (kamida 16 belgi). scripts/up.sh bo'sh bo'lsa .env ga o'zi yozadi;
+      # Imzolangan yuklash URL lari uchun HMAC kaliti (kamida 16 belgi). scripts/gen-secrets.sh yaratadi;
       # bo'sh qolsa faqat driver servisi ishga tushmaydi (config xatosi)
-      UPLOAD_SIGNING_SECRET: ${UPLOAD_SIGNING_SECRET:-}
+      # UPLOAD_SIGNING_SECRET: Docker secret — secrets/svc/driver/UPLOAD_SIGNING_SECRET -> /run/secrets/izgo/UPLOAD_SIGNING_SECRET (scripts/gen-secrets.sh)
       # Mijoz ko'radigan manzil (upload_url shu bilan boshlanadi) — Kong
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
       UPLOADS_DIR: /app/uploads
@@ -190,13 +189,15 @@ services:
       APPROVAL_SYSTEM_ACTOR_ID: ${APPROVAL_SYSTEM_ACTOR_ID:-00000000-0000-0000-0000-000000000001}
       # /internal/driver/* uchun X-Internal-Token (identity/pricing bilan bir xil); bo'sh bo'lsa ichki API hammaga yopiq.
       # Matching'ga profil yuborishda ham birinchi qiymat X-Internal-Token sifatida ishlatiladi.
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/driver/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       # Profil sinxronlash: active bo'lganda va PUT /api/v1/drivers/me da POST /internal/matching/drivers/{user_id}/profile.
       # Bo'sh bo'lsa sinxronlash o'chiq.
       MATCHING_URL: ${MATCHING_URL:-http://matching-geo:8013}
       INTERNAL_HTTP_TIMEOUT_MS: ${INTERNAL_HTTP_TIMEOUT_MS:-3000}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/driver:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/driver:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
       - driver_uploads:/app/uploads
     expose: ["8011"]
     healthcheck:
@@ -221,8 +222,7 @@ services:
       DB_HOST: postgres
       DB_USER: trip_order_svc
       DB_NAME: trip_order_db
-      # init-databases.sh bilan bir xil qoida: TRIP_ORDER_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${TRIP_ORDER_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
+      # DB_PASSWORD: Docker secret — secrets/svc/trip-order/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
       # Identity chiqargan tokenlarni tekshirish uchun faqat public kalit (private kalit kerak emas)
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
@@ -232,9 +232,11 @@ services:
       WALLET_URL: ${WALLET_URL:-http://wallet:8015}
       # /internal/* chaqiruvlari uchun X-Internal-Token (pricing/matching-geo/wallet bilan bir xil); kiruvchi
       # /internal/orders (backoffice) ham shu ro'yxat bilan tekshiriladi
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/trip-order/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/trip-order:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/trip-order:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8012"]
     healthcheck:
       test: ["CMD", "/trip-order", "healthcheck"]
@@ -256,7 +258,7 @@ services:
       <<: *service-env
       PORT: "8013"
       # Servislararo umumiy sir (pricing bilan bir xil INTERNAL_TOKENS). Bo'sh bo'lsa faqat matching-geo ishga tushmaydi.
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/matching-geo/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       LOCATION_TTL: ${LOCATION_TTL:-2m}
       MAX_SPEED_KMH: ${MAX_SPEED_KMH:-300}
       DEFAULT_RADIUS_M: ${DEFAULT_RADIUS_M:-50000}
@@ -267,6 +269,8 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/matching-geo:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/matching-geo:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8013"]
     healthcheck:
       test: ["CMD", "/matching-geo", "healthcheck"]
@@ -287,18 +291,19 @@ services:
       DB_HOST: postgres
       DB_USER: wallet_svc
       DB_NAME: wallet_db
-      # init-databases.sh bilan bir xil qoida: WALLET_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${WALLET_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
+      # DB_PASSWORD: Docker secret — secrets/svc/wallet/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
       # Identity chiqargan tokenlarni tekshirish uchun faqat public kalit
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
-      # Servislararo umumiy sir (/internal/wallet/*). ./scripts/up.sh yo'q bo'lsa yozadi.
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:?INTERNAL_TOKENS .env da berilishi kerak (kamida 16 belgi; ./scripts/up.sh o'zi yozadi)}
+      # Servislararo umumiy sir (/internal/wallet/*). scripts/gen-secrets.sh yaratadi.
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/wallet/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       # To'lov provayderlari hozir MOCK
       PAYMENT_MODE: ${PAYMENT_MODE:-mock}
       COMMISSION_BPS: ${COMMISSION_BPS:-1000}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/wallet:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/wallet:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8015"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -317,17 +322,16 @@ services:
       DB_HOST: postgres
       DB_USER: backoffice_svc
       DB_NAME: backoffice_db
-      # init-databases.sh bilan bir xil qoida: BACKOFFICE_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${BACKOFFICE_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
+      # DB_PASSWORD: Docker secret — secrets/svc/backoffice/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
       # Identity public.pem (admin JWT ni tekshirish uchun faqat public kalit)
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
       ROLES_FILE: /app/shared/roles/roles.json
       # Identity bilan xodim sinxronlash (POST /internal/identity/staff). INTERNAL_TOKENS identity bilan bir xil;
-      # ./scripts/up.sh .env ga o'zi yozadi. Bo'sh bo'lsa faqat backoffice ishga tushmaydi.
+      # scripts/gen-secrets.sh yaratadi. Bo'sh bo'lsa faqat backoffice ishga tushmaydi.
       IDENTITY_STAFF_MODE: http
       IDENTITY_INTERNAL_URL: ${IDENTITY_INTERNAL_URL:-http://identity:8010}
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/backoffice/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       # Driver/User lookup (operator navbatida telefon): GET /internal/identity/users/{id} (yo'lovchi) va
       # GET /internal/driver/drivers/{id} (haydovchi). Ikkalasi ham tayyor; test/offline uchun INTERNAL_LOOKUP_MODE=mock
       INTERNAL_LOOKUP_MODE: ${INTERNAL_LOOKUP_MODE:-http}
@@ -338,12 +342,10 @@ services:
       TZ_OFFSET_HOURS: ${TZ_OFFSET_HOURS:-5}
       # Operator "resolved" qilgan haydovchi arizasi uchun driver.approved chiqariladi
       PUBLISH_APPROVED_ON_RESOLVED: ${PUBLISH_APPROVED_ON_RESOLVED:-true}
-      # Identity'dagi birinchi superadmin (backoffice yozuvini avtomatik yaratish uchun)
-      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
-      ADMIN_BOOTSTRAP_PHONE: ${ADMIN_BOOTSTRAP_PHONE:-}
-      ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-Superadmin}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/backoffice:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/backoffice:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8017"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8017/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -371,14 +373,16 @@ services:
       DB_HOST: postgres
       DB_USER: pricing_svc
       DB_NAME: pricing_db
-      # init-databases.sh bilan bir xil qoida: PRICING_DB_PASSWORD bo'sh bo'lsa POSTGRES_PASSWORD
-      DB_PASSWORD: ${PRICING_DB_PASSWORD:-${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da berilishi kerak}}
-      # Servislararo umumiy sir (vergul bilan bir nechta — almashtirish davrida). ./scripts/up.sh yo'q bo'lsa yozadi.
+      # DB_PASSWORD: Docker secret — secrets/svc/pricing/DB_PASSWORD -> /run/secrets/izgo/DB_PASSWORD (scripts/gen-secrets.sh)
+      # Servislararo umumiy sir (vergul bilan bir nechta — almashtirish davrida). scripts/gen-secrets.sh yaratadi.
       # Bo'sh bo'lsa faqat pricing ishga tushmaydi (config tekshiruvi); butun compose to'xtamasligi uchun ":?" ishlatilmaydi.
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/pricing/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       TARIFF_CACHE_TTL: ${TARIFF_CACHE_TTL:-5m}
       ROAD_FACTOR: ${ROAD_FACTOR:-1.3}
       AVG_SPEED_KMH: ${AVG_SPEED_KMH:-30}
+    volumes:
+      - ./secrets/svc/pricing:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/pricing:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8014"]
     healthcheck:
       test: ["CMD", "/pricing", "healthcheck"]
@@ -400,13 +404,13 @@ services:
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt/public.pem
       JWT_ISSUER: ${JWT_ISSUER:-izgo-identity}
       # Servislararo umumiy sir (pricing/matching-geo bilan bir xil). Bo'sh bo'lsa faqat notification ishga tushmaydi.
-      INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
+      # INTERNAL_TOKENS: Docker secret — secrets/svc/notification/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       # Mock SMS: OTP kodini logga yozish — FAQAT lokal ishlab chiqish uchun
       MOCK_LOG_SMS_PARAMS: ${MOCK_LOG_SMS_PARAMS:-true}
       # SMS (smsxabarnoma.uz): SMS_MODE=real va kalit bo'lsa yuboriladi, aks holda Mock (log)
       SMS_MODE: ${SMS_MODE:-mock}
       SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-https://smsxabarnoma.uz/api/v1}
-      SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
+      # SMS_PROVIDER_KEY: Docker secret — secrets/svc/notification/SMS_PROVIDER_KEY -> /run/secrets/izgo/SMS_PROVIDER_KEY (scripts/gen-secrets.sh)
       WS_MAX_CONNS: ${WS_MAX_CONNS:-3}
       # WS auth: subprotocol "izgo.v1, bearer.<token>" yoki birinchi xabar. Eski ?token= frontend o'tguncha yoqiq.
       WS_AUTH_TIMEOUT: ${WS_AUTH_TIMEOUT:-5s}
@@ -415,6 +419,8 @@ services:
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
     volumes:
       - ./secrets/jwt/public.pem:/run/secrets/jwt/public.pem:ro
+      - ./secrets/svc/notification:/run/secrets/izgo:ro   # F-16: sirlar (fayl nomi = env nomi)
+      - ./secrets/mtls/notification:/run/secrets/mtls:ro   # F-02: sertifikat (bosqich 2 da ishlatiladi)
     expose: ["8016"]
     healthcheck:
       test: ["CMD", "/notification", "healthcheck"]

@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: wallet
+  config:
+    # F-16: Docker secrets — SECRETS_DIR (default /run/secrets/izgo) dagi har bir fayl shu nomli property
+    # (DB_PASSWORD, INTERNAL_TOKENS, REDIS_URL, NATS_URL ...). Muhit o'zgaruvchisi ustun; papka yo'q bo'lsa o'tkaziladi.
+    import: "optional:configtree:${SECRETS_DIR:/run/secrets/izgo}/"
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: always
