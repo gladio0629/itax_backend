@@ -86,7 +86,7 @@ func newEnv(t *testing.T, mut ...func(*auth.Options)) *env {
 	opt := auth.Options{
 		AccessTTL: 15 * time.Minute, RefreshTTL: 7 * 24 * time.Hour, AdminTTL: time.Hour,
 		OTPTTL: 3 * time.Minute, OTPResend: time.Minute, LimitWindow: time.Hour,
-		OTPMaxAttempts: 3, PhoneLimit: 5, IPLimit: 20,
+		OTPMaxAttempts: 3, PhoneLimit: 5, IPLimit: 20, PhoneBlock: time.Hour,
 	}
 	for _, m := range mut {
 		m(&opt)

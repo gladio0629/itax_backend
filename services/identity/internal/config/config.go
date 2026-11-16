@@ -44,6 +44,10 @@ type Config struct {
 	OTPPhoneLimit  int           `envconfig:"OTP_PHONE_LIMIT" default:"5"`
 	OTPIPLimit     int           `envconfig:"OTP_IP_LIMIT" default:"20"`
 	OTPLimitWindow time.Duration `envconfig:"OTP_LIMIT_WINDOW" default:"1h"`
+	// Telefon limiti (OTP_PHONE_LIMIT) tugagach shu muddat blok — oyna boshidan emas, limitga yetgan paytdan.
+	OTPPhoneBlock time.Duration `envconfig:"OTP_PHONE_BLOCK" default:"1h"`
+	// SMS byudjet signali: bir kunda (Toshkent vaqti) shundan ko'p SMS yuborilsa logga ALERT. 0 — o'chirilgan.
+	SMSDailyBudget int `envconfig:"SMS_DAILY_BUDGET" default:"1000"`
 
 	// Ichki API (/internal/*) uchun umumiy sir: X-Internal-Token sarlavhasi. Vergul bilan bir nechta qiymat
 	// (almashtirish davrida eski va yangisi birga ishlaydi). Har biri kamida 16 belgi.
@@ -105,7 +109,7 @@ func (c Config) validate() error {
 	}
 	for name, v := range map[string]time.Duration{
 		"ACCESS_TOKEN_TTL": c.AccessTTL, "REFRESH_TOKEN_TTL": c.RefreshTTL, "ADMIN_TOKEN_TTL": c.AdminTTL,
-		"OTP_TTL": c.OTPTTL, "OTP_LIMIT_WINDOW": c.OTPLimitWindow,
+		"OTP_TTL": c.OTPTTL, "OTP_LIMIT_WINDOW": c.OTPLimitWindow, "OTP_PHONE_BLOCK": c.OTPPhoneBlock,
 	} {
 		if v <= 0 {
 			errs = append(errs, fmt.Errorf("%s musbat bo'lishi kerak", name))
@@ -117,6 +121,9 @@ func (c Config) validate() error {
 		if v <= 0 {
 			errs = append(errs, fmt.Errorf("%s musbat bo'lishi kerak", name))
 		}
+	}
+	if c.SMSDailyBudget < 0 {
+		errs = append(errs, errors.New("SMS_DAILY_BUDGET manfiy bo'lmasligi kerak (0 — o'chirilgan)"))
 	}
 	if len(c.InternalTokens) == 0 {
 		errs = append(errs, errors.New("INTERNAL_TOKENS bo'sh bo'lmasligi kerak"))

@@ -24,6 +24,8 @@ type Options struct {
 	OTPTTL, OTPResend, LimitWindow  time.Duration
 	OTPMaxAttempts                  int
 	PhoneLimit, IPLimit             int
+	// PhoneBlock — telefon (admin: email/telefon) limiti tugagach blok muddati (F-04: 1 soat). 0 — faqat oyna.
+	PhoneBlock time.Duration
 	// Dev — faqat DEV_MODE=true bo'lganda to'ldiriladi (config.DevOTP). Nol qiymat — o'chirilgan.
 	Dev DevOTP
 }
@@ -97,10 +99,10 @@ func (s *Service) RequestOTP(ctx context.Context, phone, ip string) (OTPResult, 
 	} else if d > 0 {
 		return OTPResult{}, apperr.RateLimited(d)
 	}
-	if err := s.consume(ctx, "rl:otp:ip:"+ip, s.opt.IPLimit); err != nil {
+	if err := s.consume(ctx, "rl:otp:ip:"+ip, s.opt.IPLimit, 0); err != nil {
 		return OTPResult{}, err
 	}
-	if err := s.consume(ctx, "rl:otp:phone:"+phone, s.opt.PhoneLimit); err != nil {
+	if err := s.consume(ctx, "rl:otp:phone:"+phone, s.opt.PhoneLimit, s.opt.PhoneBlock); err != nil {
 		return OTPResult{}, err
 	}
 
@@ -120,8 +122,9 @@ func (s *Service) RequestOTP(ctx context.Context, phone, ip string) (OTPResult, 
 	return OTPResult{ExpiresIn: int(s.opt.OTPTTL.Seconds()), ResendAfter: int(s.opt.OTPResend.Seconds()), CodeLength: otpDigits}, nil
 }
 
-func (s *Service) consume(ctx context.Context, key string, limit int) error {
-	ok, retry, err := s.otp.Hit(ctx, key, limit, s.opt.LimitWindow)
+// consume — tezlik cheklovi: LimitWindow ichida limit ta urinish; block > 0 bo'lsa limit tugagach shuncha blok.
+func (s *Service) consume(ctx context.Context, key string, limit int, block time.Duration) error {
+	ok, retry, err := s.otp.Hit(ctx, key, limit, s.opt.LimitWindow, block)
 	if err != nil {
 		return err
 	}

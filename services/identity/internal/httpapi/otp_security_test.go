@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/izgo/identity/internal/auth"
 )
 
 func TestOTPWrongAttemptsThenCodeDeleted(t *testing.T) {
@@ -138,5 +140,62 @@ func TestOTPIPLimitTwentyPerHour(t *testing.T) {
 	// mijoz XFF'ga o'zi soxta chap yozuv qo'shib limitdan qutula olmaydi
 	if r = e.do("POST", "/api/v1/auth/otp/request", map[string]string{"phone": "+998908888889"}, map[string]string{"X-Forwarded-For": "203.0.113.7, 198.51.100.1"}); r.Status != 202 {
 		t.Fatalf("o'ng yozuv boshqa IP: %d", r.Status)
+	}
+}
+
+// TestOTPPhoneBlockOneHourAfterLimit (F-04) — blok 5-urinishdan keyin to'liq 1 soat davom etadi, soatlik oyna
+// birinchi urinishdan boshlangan bo'lsa ham (aks holda 1-urinishdan 60 daqiqa o'tgach blok erta tugardi).
+func TestOTPPhoneBlockOneHourAfterLimit(t *testing.T) {
+	e := newEnv(t)
+	req := func(ip string) resp {
+		return e.do("POST", "/api/v1/auth/otp/request", map[string]string{"phone": phoneA}, map[string]string{"X-Real-IP": ip})
+	}
+	if r := req("10.1.0.1"); r.Status != 202 {
+		t.Fatalf("1-urinish: %d %v", r.Status, r.Body)
+	}
+	e.mr.FastForward(50 * time.Minute)
+	for i := 2; i <= 5; i++ {
+		if r := req(fmt.Sprintf("10.1.0.%d", i)); r.Status != 202 {
+			t.Fatalf("%d-urinish: %d %v", i, r.Status, r.Body)
+		}
+		e.mr.FastForward(61 * time.Second)
+	}
+	// 5-urinish ~54-daqiqada: blok shu paytdan 1 soat
+	steps := []struct {
+		name    string
+		advance time.Duration
+		want    int
+	}{
+		{"6-urinish darhol", 0, 429},
+		{"1-urinishdan 61 daqiqa o'tdi (oyna tugadi, blok davom etadi)", 7 * time.Minute, 429},
+		{"5-urinishdan ~59 daqiqa", 50 * time.Minute, 429},
+		{"5-urinishdan 1 soat o'tdi", 3 * time.Minute, 202},
+	}
+	for _, s := range steps {
+		e.mr.FastForward(s.advance)
+		r := req("10.1.0.99")
+		if r.Status != s.want {
+			t.Fatalf("%s: %d, kutilgan %d %v", s.name, r.Status, s.want, r.Body)
+		}
+		if s.want == 429 {
+			if ra, _ := r.errParam("retry_after").(float64); ra < 1 || ra > 3600 {
+				t.Fatalf("%s: retry_after = %v", s.name, r.errParam("retry_after"))
+			}
+		}
+	}
+}
+
+// TestOTPPhoneBlockShorterThanWindow — blok oynadan qisqa bo'lsa ham limit oynasi qisqarmaydi.
+func TestOTPPhoneBlockShorterThanWindow(t *testing.T) {
+	e := newEnv(t, func(o *auth.Options) { o.PhoneBlock = time.Minute })
+	for i := 1; i <= 5; i++ {
+		if r := e.do("POST", "/api/v1/auth/otp/request", map[string]string{"phone": phoneA}, map[string]string{"X-Real-IP": fmt.Sprintf("10.2.0.%d", i)}); r.Status != 202 {
+			t.Fatalf("%d-urinish: %d %v", i, r.Status, r.Body)
+		}
+		e.mr.FastForward(61 * time.Second)
+	}
+	e.mr.FastForward(10 * time.Minute)
+	if r := e.do("POST", "/api/v1/auth/otp/request", map[string]string{"phone": phoneA}, map[string]string{"X-Real-IP": "10.2.0.99"}); r.Status != 429 {
+		t.Fatalf("oyna ichida (blok 1 daqiqa bo'lsa ham) rad etilishi kerak: %d %v", r.Status, r.Body)
 	}
 }

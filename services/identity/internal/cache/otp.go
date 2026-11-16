@@ -102,9 +102,15 @@ func (o *OTP) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// KEYS[1] — hisoblagich. ARGV: oyna_s, limit, blok_s (0 — blok yo'q).
+// Hisob limitga yetgan urinishda (n == limit) kalit muddati blok_s ga uzaytiriladi: keyingi urinishlar shu paytdan
+// boshlab to'liq blok davomida rad etiladi (oyna boshidan emas). Muddat faqat uzaytiriladi (blok oynadan qisqa bo'lsa
+// limit zaiflashmaydi). Rad etilgan urinishlar blokni uzaytirmaydi.
 var hitScript = redis.NewScript(`
 local n = redis.call('INCR', KEYS[1])
 if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+local block = tonumber(ARGV[3])
+if block > 0 and n == tonumber(ARGV[2]) and redis.call('TTL', KEYS[1]) < block then redis.call('EXPIRE', KEYS[1], block) end
 local ttl = redis.call('TTL', KEYS[1])
 if ttl < 0 then
   redis.call('EXPIRE', KEYS[1], ARGV[1])
@@ -115,12 +121,17 @@ return {n, ttl}
 
 // Hit — hisoblagichni 1 ga oshiradi (oyna birinchi urinishdan boshlanadi).
 // limit oshib ketgan bo'lsa ok=false va qancha kutish kerakligi qaytadi.
-func (o *OTP) Hit(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error) {
+// block > 0 bo'lsa: limit-chi urinishdan keyin kalit block davomida yashaydi (masalan, 5 urinish -> 1 soat blok).
+func (o *OTP) Hit(ctx context.Context, key string, limit int, window, block time.Duration) (ok bool, retryAfter time.Duration, err error) {
 	secs := int(window.Seconds())
 	if secs < 1 {
 		secs = 1
 	}
-	res, err := hitScript.Run(ctx, o.rdb, []string{key}, secs).Slice()
+	blockSecs := 0
+	if block > 0 {
+		blockSecs = max(int(block.Seconds()), 1)
+	}
+	res, err := hitScript.Run(ctx, o.rdb, []string{key}, secs, limit, blockSecs).Slice()
 	if err != nil {
 		return false, 0, fmt.Errorf("ratelimit: %w", err)
 	}
