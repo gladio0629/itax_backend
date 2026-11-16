@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://izgo.uz/schemas/events/staff.logged_out.v1.json",
+  "title": "staff.logged_out",
+  "description": "Xodim admin paneldan chiqdi (POST /admin/v1/auth/logout, sessiya bekor qilindi). PII (telefon/email) yuborilmaydi. Subject `izgo.user.>` ostida — identity'ning USER_EVENTS stream'i qamrab oladi.",
+  "x-producer": "identity",
+  "x-consumers": [
+    "backoffice"
+  ],
+  "x-nats-subject": "izgo.user.staff_logged_out.v1",
+  "type": "object",
+  "required": [
+    "event",
+    "version",
+    "event_id",
+    "occurred_at",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "const": "staff.logged_out"
+    },
+    "version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Hodisaning noyob ID si (idempotentlik uchun; Backoffice audit yozuvining ID si sifatida ishlatiladi)"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Ixtiyoriy: so'rov kuzatuvi uchun (X-Request-ID)"
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "staff_id",
+        "role",
+        "session_id",
+        "logged_out_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "staff_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Xodim ID si (token `sub`)"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "superadmin",
+            "owner",
+            "manager",
+            "marketer",
+            "operator"
+          ]
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Sessiya ID si (token `sid`)"
+        },
+        "logged_out_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

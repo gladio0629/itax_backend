@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { HttpDriverLookupPort, HttpIdentityStaffPort, HttpUserLookupPort } from '../src/ports/http-ports';
 import { InternalHttpClient } from '../src/ports/internal-http';
 import { loadConfig } from '../src/config/configuration';
-import { createHarness, Harness } from './support/harness';
+import { createHarness, Harness, makeToken } from './support/harness';
 
 const TOKEN = 'test-internal-token-0123456789';
 
@@ -21,6 +21,8 @@ class IdentityStub {
   users = new Map<string, { id: string; phone: string }>();
   missing = new Set<string>(); // identity'da yo'q xodimlar (PUT -> 404)
   blockedPhones = new Set<string>(); // identity'da boshqa xodimda band telefonlar (PUT -> 409)
+  staff = new Map<string, Record<string, unknown>>(); // GET /internal/identity/staff/{id} javoblari
+  staffGet: 'ok' | 'legacy405' | 'bare404' | 'garbage' = 'ok';
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => void this.handle(req, res));
@@ -53,6 +55,14 @@ class IdentityStub {
       return send(201, { id: uuidv4(), phone: b.phone, role: b.role });
     }
     const sm = /^\/internal\/identity\/staff\/([^/]+)$/.exec(req.url!);
+    if (req.method === 'GET' && sm) {
+      // legacy405 — endpoint hali yo'q eski identity (Go mux: yo'l bor, metod yo'q)
+      if (this.staffGet === 'legacy405') { res.writeHead(405, { 'Content-Type': 'text/plain' }); return void res.end('Method Not Allowed\n'); }
+      if (this.staffGet === 'bare404') return send(404, { error: { key: 'NOT_FOUND', params: {} } });
+      if (this.staffGet === 'garbage') return send(200, { id: sm[1], phone: 42 });
+      const st = this.staff.get(sm[1]);
+      return st ? send(200, st) : send(404, { error: { key: 'STAFF_NOT_FOUND', params: { staff_id: sm[1] } } });
+    }
     if (req.method === 'PUT' && sm) {
       const b = JSON.parse(raw);
       if (this.missing.has(sm[1])) return send(404, { error: { key: 'STAFF_NOT_FOUND', params: { staff_id: sm[1] } } });
@@ -74,7 +84,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
   afterAll(() => stub.stop());
   beforeEach(() => {
     stub.calls = []; stub.taken.emails.clear(); stub.taken.phones.clear(); stub.mode = 'ok';
-    stub.missing.clear(); stub.blockedPhones.clear();
+    stub.missing.clear(); stub.blockedPhones.clear(); stub.staff.clear(); stub.staffGet = 'ok';
   });
 
   const port = (timeoutMs = 500, token = TOKEN) =>
@@ -115,6 +125,72 @@ describe('Identity bilan HTTP sinxronlash', () => {
       await expect(port().create(input)).rejects.toMatchObject({ status: 502, params: { reason: 'http_500' } });
       stub.mode = 'ok';
       await expect(port(500, 'boshqa-token-0123456789').create(input)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
+    });
+
+    describe('get: GET /internal/identity/staff/{id}', () => {
+      const id = '0193a000-0000-7000-8000-00000000abcd';
+      const full = { id, phone: '+998935550010', email: 'root@izgo.uz', role: 'superadmin', name: 'Root', active: true };
+
+      it('200 → IdentityStaff (name → fullName), X-Internal-Token yuboriladi', async () => {
+        stub.staff.set(id, full);
+        expect(await port().get(id)).toEqual({ id, phone: full.phone, email: full.email, fullName: 'Root', role: 'superadmin', active: true });
+        expect(stub.calls[0]).toMatchObject({ method: 'GET', url: `/internal/identity/staff/${id}`, token: TOKEN });
+        stub.staff.set(id, { ...full, email: null, role: 'operator', active: false });
+        expect(await port().get(id)).toMatchObject({ email: null, role: 'operator', active: false });
+      });
+
+      it('404 STAFF_NOT_FOUND → null', async () => {
+        expect(await port().get(id)).toBeNull();
+      });
+
+      it('kalitsiz 404, eski identity (405), noto\'g\'ri shakl, boshqa id → 502 (null emas)', async () => {
+        stub.staffGet = 'bare404';
+        await expect(port().get(id)).rejects.toMatchObject({ status: 502, key: 'IDENTITY_UNAVAILABLE', params: { reason: 'http_404' } });
+        stub.staffGet = 'legacy405';
+        await expect(port().get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_405' } });
+        stub.staffGet = 'garbage';
+        await expect(port().get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'invalid_response' } });
+        stub.staffGet = 'ok';
+        stub.staff.set(id, { ...full, id: '0193a000-0000-7000-8000-00000000ffff' });
+        await expect(port().get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'invalid_response' } });
+      });
+
+      it('5xx, noto\'g\'ri token, timeout → 502', async () => {
+        stub.mode = 'error500';
+        await expect(port().get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_500' } });
+        stub.mode = 'ok';
+        await expect(port(500, 'boshqa-token-0123456789').get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
+        stub.mode = 'hang';
+        await expect(port(150).get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'timeout' } });
+      });
+    });
+  });
+
+  describe('Superadmin provision (haqiqiy HTTP orqali)', () => {
+    let h: Harness;
+    beforeEach(async () => {
+      h = await createHarness({ identity: { mode: 'http', baseUrl: stub.url, internalToken: TOKEN, timeoutMs: 300 } });
+    });
+    afterEach(async () => { await h.app.close(); });
+
+    it('birinchi kirish: email/telefon/ism identity\'dan olinadi', async () => {
+      const id = uuidv4();
+      stub.staff.set(id, { id, phone: '+998935550020', email: 'seed@izgo.test', role: 'superadmin', name: 'Seed Root', active: true });
+      const r = await h.http().get('/admin/v1/me').set('Authorization', `Bearer ${makeToken(id, { role: 'superadmin' })}`);
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({ id, email: 'seed@izgo.test', full_name: 'Seed Root' });
+      expect((await h.ds.query(`SELECT phone FROM staff WHERE id = '${id}'`))[0].phone).toBe('+998935550020');
+    });
+
+    it('identity\'da yo\'q → 403; identity eski (405) → 502; ikkalasida yozuv yaratilmaydi', async () => {
+      const id = uuidv4();
+      const t = `Bearer ${makeToken(id, { role: 'superadmin' })}`;
+      expect((await h.http().get('/admin/v1/me').set('Authorization', t)).status).toBe(403);
+      stub.staffGet = 'legacy405';
+      const r = await h.http().get('/admin/v1/me').set('Authorization', t);
+      expect(r.status).toBe(502);
+      expect(r.body.error.key).toBe('IDENTITY_UNAVAILABLE');
+      expect(await h.ds.query(`SELECT id FROM staff WHERE id = '${id}'`)).toHaveLength(0);
     });
   });
 

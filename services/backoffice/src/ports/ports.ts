@@ -134,6 +134,11 @@ export interface IdentityStaff {
 export abstract class IdentityStaffPort {
   abstract create(s: { phone: string; email: string | null; role: string; name: string }): Promise<{ id: string }>;
   /**
+   * Xodimning identity'dagi haqiqiy ma'lumoti: GET /internal/identity/staff/{id}. Yo'q bo'lsa — null
+   * (faqat 404 STAFF_NOT_FOUND); identity javob bermasa yoki kutilmagan javob — 502 IDENTITY_UNAVAILABLE.
+   */
+  abstract get(id: string): Promise<IdentityStaff | null>;
+  /**
    * Rol/telefon/ism/holat o'zgarishi: PUT /internal/identity/staff/{id}. Xato bo'lsa chaqiruvchi tranzaksiyasi
    * bekor bo'ladi.
    */

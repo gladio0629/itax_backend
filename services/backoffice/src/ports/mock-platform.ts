@@ -290,6 +290,11 @@ export class MockIdentityStaffPort extends IdentityStaffPort {
     return { id };
   }
 
+  async get(id: string): Promise<IdentityStaff | null> {
+    const s = this.d.identityStaff.get(id);
+    return s ? { ...s } : null;
+  }
+
   async update(staff: IdentityStaff): Promise<void> { this.d.identityStaff.set(staff.id, { ...staff }); }
 }
 

@@ -13,6 +13,9 @@ export interface Envelope<P> {
 export const SUBJECT_DRIVER_SUBMITTED = 'izgo.driver.submitted.v1';
 export const SUBJECT_DRIVER_APPROVED = 'izgo.driver.approved.v1';
 export const SUBJECT_USER_CREATED = 'izgo.user.created.v1';
+/** identity -> backoffice audit (shared/events/staff.logged_in.json, staff.logged_out.json) */
+export const SUBJECT_STAFF_LOGGED_IN = 'izgo.user.staff_logged_in.v1';
+export const SUBJECT_STAFF_LOGGED_OUT = 'izgo.user.staff_logged_out.v1';
 
 export interface OutboxDraft {
   id: string;

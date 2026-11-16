@@ -111,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Ichki API: Kong bu yo'lni tashqariga chiqarmaydi; qo'shimcha ravishda X-Internal-Token talab qilinadi.
 	mux.HandleFunc("POST /internal/identity/staff", s.internal(s.internalStaffCreate))
+	mux.HandleFunc("GET /internal/identity/staff/{id}", s.internal(s.internalStaffGet))
 	mux.HandleFunc("PUT /internal/identity/staff/{id}", s.internal(s.internalStaffUpdate))
 	mux.HandleFunc("GET /internal/identity/users/{id}", s.internal(s.internalUserGet))
 
@@ -222,7 +223,7 @@ func (s *Server) adminLoginVerify(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	cid, _ := uuid.Parse(in.ChallengeID)
-	t, err := s.svc.AdminLoginVerify(r.Context(), cid, in.SMSCode)
+	t, err := s.svc.AdminLoginVerify(r.Context(), cid, in.SMSCode, requestID(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -238,7 +239,7 @@ func (s *Server) adminLogout(w http.ResponseWriter, r *http.Request) error {
 	if raw = strings.TrimSpace(raw); !ok || raw == "" {
 		return apperr.Unauthorized()
 	}
-	if err := s.svc.AdminLogout(r.Context(), raw); err != nil {
+	if err := s.svc.AdminLogout(r.Context(), raw, requestID(r.Context())); err != nil {
 		return err
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -271,6 +272,20 @@ func (s *Server) internalStaffUpdate(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	st, err := s.svc.UpdateStaff(r.Context(), id, in.patch())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, newInternalStaffFullResp(st))
+	return nil
+}
+
+// internalStaffGet — GET /internal/identity/staff/{id} -> 200 {id, phone, email, role, name, active} | 404 | 422.
+func (s *Server) internalStaffGet(w http.ResponseWriter, r *http.Request) error {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		return apperr.Validation(map[string]string{"id": "invalid_format"})
+	}
+	st, err := s.svc.GetStaff(r.Context(), id)
 	if err != nil {
 		return err
 	}

@@ -18,8 +18,6 @@ export interface AppConfig {
   redis: { url: string; timeoutMs: number };
   /** Trip & Order ichki API (buyurtmalar va buyurtma statistikasi). mock — testlar va kod defaulti */
   orders: { mode: 'http' | 'mock'; baseUrl: string };
-  /** identity'dagi birinchi superadmin (token'dan avtomatik yaratish uchun ma'lumot) */
-  bootstrap: { email: string | null; phone: string | null; name: string };
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -65,11 +63,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rolesFile: env.ROLES_FILE || join(process.cwd(), '..', '..', 'shared', 'roles', 'roles.json'),
     tzOffsetHours: Number(env.TZ_OFFSET_HOURS ?? 5),
     publishApprovedOnResolved: !['0', 'false', 'no'].includes((env.PUBLISH_APPROVED_ON_RESOLVED ?? 'true').toLowerCase()),
-    bootstrap: {
-      email: env.ADMIN_BOOTSTRAP_EMAIL || null,
-      phone: env.ADMIN_BOOTSTRAP_PHONE || null,
-      name: env.ADMIN_BOOTSTRAP_NAME || 'Superadmin',
-    },
   };
 }
 

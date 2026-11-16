@@ -12,14 +12,14 @@ import {
 import { APP_CONFIG, AppConfig } from '../config/configuration';
 import { EventPublisher } from './event-publisher';
 import { InboundEvents } from './inbound-events';
-import { SUBJECT_DRIVER_SUBMITTED } from './envelope';
+import { SUBJECT_DRIVER_SUBMITTED, SUBJECT_STAFF_LOGGED_IN, SUBJECT_STAFF_LOGGED_OUT } from './envelope';
 
 const STREAM = 'DRIVER_EVENTS';
 const CONSUMER_RETRY_MS = 5000;
 
 /**
  * NATS JetStream: hodisa yuborish (envelope o'zgarishsiz, `{pattern,data}` o'ramisiz) va
- * user.created / driver.approved ni tinglash. Broker ko'tarilmagan bo'lsa servis baribir ishga tushadi —
+ * driver.submitted va staff.logged_in / staff.logged_out ni tinglash. Broker ko'tarilmagan bo'lsa servis baribir ishga tushadi —
  * ulanish fonda qayta uriniladi, hodisalar outbox da kutadi.
  */
 @Injectable()
@@ -64,6 +64,10 @@ export class NatsService extends EventPublisher implements OnModuleInit, OnModul
         this.jsm = await this.nc.jetstreamManager();
         this.log.log('NATS ga ulandi');
         void this.consumeLoop(SUBJECT_DRIVER_SUBMITTED, 'backoffice-svc-driver-submitted', (d) => this.inbound.onDriverSubmitted(d));
+        // Xodim kirish/chiqishi -> audit. Subject'lar identity'ning USER_EVENTS (izgo.user.>) stream'ida;
+        // stream hali yo'q bo'lsa obuna CONSUMER_RETRY_MS da qayta uriniladi.
+        void this.consumeLoop(SUBJECT_STAFF_LOGGED_IN, 'backoffice-svc-staff-logged-in', (d) => this.inbound.onStaffLoggedIn(d));
+        void this.consumeLoop(SUBJECT_STAFF_LOGGED_OUT, 'backoffice-svc-staff-logged-out', (d) => this.inbound.onStaffLoggedOut(d));
       } catch (err) {
         this.nc = undefined;
         this.log.warn(`NATS ulanmadi, qayta uriniladi: ${(err as Error).message}`);

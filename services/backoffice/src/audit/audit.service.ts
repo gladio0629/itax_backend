@@ -28,8 +28,20 @@ export interface AuditEntry {
 @Injectable()
 export class AuditService {
   async record(em: EntityManager, actor: Actor, e: AuditEntry): Promise<void> {
-    await em.getRepository(AuditLog).insert({
-      id: uuidv4(),
+    await em.getRepository(AuditLog).insert(this.row(uuidv4(), actor, e, new Date()));
+  }
+
+  /**
+   * Hodisadan keladigan yozuv: ID = hodisa event_id. Qayta yetkazilgan hodisa (NATS redelivery) ikkinchi
+   * yozuv yaratmaydi — jadval o'zgarmas, takrorni keyin o'chirib bo'lmaydi. `at` — hodisa sodir bo'lgan vaqt.
+   */
+  async recordOnce(em: EntityManager, id: string, actor: Actor, e: AuditEntry, at: Date): Promise<void> {
+    await em.createQueryBuilder().insert().into(AuditLog).values(this.row(id, actor, e, at)).orIgnore().execute();
+  }
+
+  private row(id: string, actor: Actor, e: AuditEntry, at: Date) {
+    return {
+      id,
       actorId: actor.id,
       actorRole: actor.role,
       action: e.action,
@@ -38,7 +50,7 @@ export class AuditService {
       before: (e.before ?? null) as never,
       after: (e.after ?? null) as never,
       requestId: actor.requestId ?? null,
-      createdAt: new Date(),
-    });
+      createdAt: at,
+    };
   }
 }

@@ -188,6 +188,18 @@ func (r *Repo) GetStaff(_ context.Context, id uuid.UUID) (auth.Staff, error) {
 
 func (r *Repo) TouchStaffLogin(context.Context, uuid.UUID, time.Time) error { return nil }
 
+func (r *Repo) InsertEvent(_ context.Context, e events.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, x := range r.Outbox {
+		if x.ID == e.ID {
+			return nil
+		}
+	}
+	r.Outbox = append(r.Outbox, e)
+	return nil
+}
+
 func (r *Repo) UpdateStaff(_ context.Context, id uuid.UUID, apply func(*auth.Staff) error) (auth.Staff, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

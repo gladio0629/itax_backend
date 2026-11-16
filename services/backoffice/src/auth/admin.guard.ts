@@ -3,9 +3,9 @@ import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import type { Request } from 'express';
 import { Actor, AuditService } from '../audit/audit.service';
-import { AppError, Errors } from '../common/errors';
-import { APP_CONFIG, AppConfig } from '../config/configuration';
+import { AppError, Errors, isUniqueViolation } from '../common/errors';
 import { Staff } from '../entities/staff.entity';
+import { IdentityStaffPort } from '../ports/ports';
 import { ROLES, RolesCatalog, StaffRole } from '../roles/roles.catalog';
 import { JwtVerifier, JwtVerifyError } from './jwt.verifier';
 import { SessionRevocationPort } from './session-revocation';
@@ -42,10 +42,10 @@ export class AdminGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(JWT_VERIFIER) private readonly verifier: JwtVerifier,
     @Inject(ROLES) private readonly roles: RolesCatalog,
-    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly ds: DataSource,
     private readonly audit: AuditService,
     private readonly sessions: SessionRevocationPort,
+    private readonly identity: IdentityStaffPort,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -96,14 +96,20 @@ export class AdminGuard implements CanActivate {
     const repo = this.ds.getRepository(Staff);
     const found = await repo.findOne({ where: { id } });
     if (found) return found;
-    // Birinchi (bootstrap) superadmin faqat identity'da yaratiladi. Identity imzolagan tokenda role=superadmin
-    // bo'lsa, backoffice yozuvini bir marta yaratamiz (ma'lumot ADMIN_BOOTSTRAP_* dan). Boshqa rollar — yo'q.
+    // Superadmin (bootstrap yoki seed-superadmin.sh) faqat identity'da yaratiladi. Tokenda role=superadmin bo'lsa,
+    // backoffice yozuvini bir marta yaratamiz — email/telefon/ism AYNAN shu akkauntniki, identity'dan
+    // (GET /internal/identity/staff/{id}). Boshqa rollar — yo'q (ular POST /admin/v1/staff orqali yaratiladi).
     if (tokenRole !== 'superadmin') return null;
+    // Identity javob bermasa — 502, yozuv yaratilmaydi (keyingi so'rovda qayta urinadi)
+    const ident = await this.identity.get(id);
+    if (!ident || ident.role !== 'superadmin' || !ident.active) {
+      this.log.warn(`superadmin tokeni (${id}) identity'da aktiv superadmin emas — backoffice yozuvi yaratilmadi`);
+      return null;
+    }
     const now = new Date();
-    const b = this.cfg.bootstrap;
     const s = repo.create({
-      id, email: b.email?.toLowerCase() ?? null, phone: b.phone, fullName: b.name, role: 'superadmin' as StaffRole,
-      state: 'active', createdBy: null, createdAt: now, updatedAt: now,
+      id, email: ident.email?.toLowerCase() ?? null, phone: ident.phone, fullName: ident.fullName,
+      role: 'superadmin' as StaffRole, state: 'active', createdBy: null, createdAt: now, updatedAt: now,
     });
     const attempt = (row: Staff) => this.ds.transaction(async (em) => {
       await em.getRepository(Staff).insert(row);
@@ -113,11 +119,18 @@ export class AdminGuard implements CanActivate {
     });
     try {
       await attempt(s);
-    } catch {
-      // email/telefon boshqa yozuvda band bo'lishi yoki parallel so'rov yaratib qo'yishi mumkin:
-      // yozuv hali yo'q bo'lsa, kontaktsiz (email/telefon null) yaratamiz
-      if (!(await repo.findOne({ where: { id } }))) {
-        try { await attempt({ ...s, email: null, phone: null }); } catch { /* quyida null qaytadi */ }
+    } catch (e) {
+      // Parallel so'rov shu yozuvni yaratib qo'ygan bo'lishi mumkin
+      const raced = await repo.findOne({ where: { id } });
+      if (raced) return raced;
+      if (!isUniqueViolation(e)) throw e;
+      // Email/telefon backoffice'dagi BOSHQA yozuvda band (ma'lumotlar identity bilan mos emas): kirishni
+      // to'smaymiz — kontaktsiz yaratamiz, ziddiyatni logga yozamiz (qo'lda tuzatish kerak)
+      this.log.warn(`superadmin ${id}: email/telefon backoffice'dagi boshqa xodimda band — kontaktsiz yaratildi`);
+      try {
+        await attempt({ ...s, email: null, phone: null });
+      } catch (e2) {
+        if (!(await repo.findOne({ where: { id } }))) throw e2;
       }
     }
     return repo.findOne({ where: { id } });

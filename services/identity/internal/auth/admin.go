@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/izgo/identity/internal/apperr"
+	"github.com/izgo/identity/internal/events"
 	"github.com/izgo/identity/internal/token"
 	"github.com/izgo/shared/roles"
 )
@@ -42,10 +43,10 @@ func NormalizeEmail(e string) string { return strings.ToLower(strings.TrimSpace(
 
 func (s *Service) AdminLoginEmail(ctx context.Context, email, ip string) (Challenge, error) {
 	email = NormalizeEmail(email)
-	if err := s.consume(ctx, "rl:adm:ip:"+ip, s.opt.IPLimit); err != nil {
+	if err := s.consume(ctx, "rl:adm:ip:"+ip, s.opt.IPLimit, 0); err != nil {
 		return Challenge{}, err
 	}
-	if err := s.consume(ctx, "rl:adm:email:"+email, s.opt.PhoneLimit); err != nil {
+	if err := s.consume(ctx, "rl:adm:email:"+email, s.opt.PhoneLimit, s.opt.PhoneBlock); err != nil {
 		return Challenge{}, err
 	}
 
@@ -132,10 +133,10 @@ func (s *Service) AdminLoginSMS(ctx context.Context, cid uuid.UUID, emailCode, p
 // Noma'lum, nofaol yoki email'i bor xodim telefoni uchun soxta challenge (SMS yuborilmaydi):
 // javob va keyingi verify xatolari haqiqiy holat bilan bir xil.
 func (s *Service) AdminLoginPhone(ctx context.Context, phone, ip string) (Challenge, error) {
-	if err := s.consume(ctx, "rl:adm:ip:"+ip, s.opt.IPLimit); err != nil {
+	if err := s.consume(ctx, "rl:adm:ip:"+ip, s.opt.IPLimit, 0); err != nil {
 		return Challenge{}, err
 	}
-	if err := s.consume(ctx, "rl:adm:phone:"+phone, s.opt.PhoneLimit); err != nil {
+	if err := s.consume(ctx, "rl:adm:phone:"+phone, s.opt.PhoneLimit, s.opt.PhoneBlock); err != nil {
 		return Challenge{}, err
 	}
 
@@ -177,7 +178,7 @@ type AdminToken struct {
 	ExpiresIn   int
 }
 
-func (s *Service) AdminLoginVerify(ctx context.Context, cid uuid.UUID, smsCode string) (AdminToken, error) {
+func (s *Service) AdminLoginVerify(ctx context.Context, cid uuid.UUID, smsCode, traceID string) (AdminToken, error) {
 	meta, err := s.loadChallenge(ctx, cid)
 	if err != nil {
 		return AdminToken{}, err
@@ -213,7 +214,24 @@ func (s *Service) AdminLoginVerify(ctx context.Context, cid uuid.UUID, smsCode s
 	if err != nil {
 		return AdminToken{}, err
 	}
-	if err := s.repo.TouchStaffLogin(ctx, staff.ID, time.Now()); err != nil {
+	now := s.now()
+	// Kirish audit'i (F-07): hodisa outbox'ga yozilmasa token berilmaydi — audit'siz sessiya bo'lmasin.
+	// Usul: email'li xodim faqat email -> SMS orqali, email'siz operator faqat telefon -> SMS orqali kira oladi.
+	method := "sms"
+	if staff.Email != nil {
+		method = "email"
+	}
+	ev, err := events.NewStaffLoggedIn(staff.ID, string(staff.Role), sid.String(), method, now, traceID)
+	if err != nil {
+		return AdminToken{}, err
+	}
+	if err := s.repo.InsertEvent(ctx, ev); err != nil {
+		return AdminToken{}, fmt.Errorf("auth: kirish hodisasi: %w", err)
+	}
+	if s.onEvent != nil {
+		s.onEvent()
+	}
+	if err := s.repo.TouchStaffLogin(ctx, staff.ID, now); err != nil {
 		s.log.WarnContext(ctx, "last_login yangilanmadi", "staff_id", staff.ID, "err", err)
 	}
 	return AdminToken{AccessToken: tok, ExpiresIn: int(s.opt.AdminTTL.Seconds())}, nil
@@ -223,13 +241,28 @@ func (s *Service) AdminLoginVerify(ctx context.Context, cid uuid.UUID, smsCode s
 // Faqat admin access token (aud=admin, typ=access) qabul qilinadi; client/driver tokenlari 401.
 // Admin tokenida refresh yo'q, shuning uchun yozuv AdminTTL + 1 daqiqa saqlanadi (AccessTTL emas).
 // Idempotent: allaqachon bekor qilingan, lekin imzosi va muddati yaroqli token bilan qayta chaqiruv ham muvaffaqiyatli.
-func (s *Service) AdminLogout(ctx context.Context, raw string) error {
+// Chiqish audit'i: staff.logged_out outbox'ga yoziladi; event_id sessiyadan deterministik, takroriy logout dublikat bermaydi.
+func (s *Service) AdminLogout(ctx context.Context, raw, traceID string) error {
 	c, err := s.tokens.Parse(raw, token.Access, token.AudAdmin)
 	if err != nil {
 		return apperr.Unauthorized()
 	}
 	if err := s.bl.Revoke(ctx, s.opt.AdminTTL+time.Minute, c.SID); err != nil {
 		return fmt.Errorf("auth: admin logout: %w", err)
+	}
+	staffID, err := uuid.Parse(c.Subject)
+	if err != nil {
+		return apperr.Unauthorized()
+	}
+	ev, err := events.NewStaffLoggedOut(staffID, c.Role, c.SID, s.now(), traceID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.InsertEvent(ctx, ev); err != nil {
+		return fmt.Errorf("auth: chiqish hodisasi: %w", err)
+	}
+	if s.onEvent != nil {
+		s.onEvent()
 	}
 	return nil
 }
@@ -355,6 +388,19 @@ func checkStaff(st Staff) error {
 		return apperr.Validation(map[string]string{"email": "required"})
 	}
 	return nil
+}
+
+// GetStaff — ichki API (Backoffice): xodimning identity'dagi haqiqiy ma'lumoti (email, telefon, rol, holat).
+// Backoffice superadmin yozuvini birinchi kirishda shu ma'lumotdan yaratadi. Yo'q bo'lsa 404 STAFF_NOT_FOUND.
+func (s *Service) GetStaff(ctx context.Context, id uuid.UUID) (Staff, error) {
+	st, err := s.repo.GetStaff(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return Staff{}, apperr.StaffNotFound(id.String())
+	}
+	if err != nil {
+		return Staff{}, fmt.Errorf("auth: xodim: %w", err)
+	}
+	return st, nil
 }
 
 // LookupUser — ichki API (Backoffice): yo'lovchi/haydovchi ma'lumoti. Yo'q bo'lsa 404 NOT_FOUND.

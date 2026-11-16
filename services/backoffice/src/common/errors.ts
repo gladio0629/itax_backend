@@ -1,5 +1,11 @@
 import { HttpException } from '@nestjs/common';
 
+/** Postgres unique cheklovi buzildi (23505) — band email/telefon yoki parallel yaratilgan bir xil yozuv. */
+export const isUniqueViolation = (e: unknown): boolean => {
+  const err = e as { code?: string; message?: string };
+  return err?.code === '23505' || /unique|duplicate/i.test(err?.message ?? '');
+};
+
 /** Xato formati: {"error":{"key":"...","params":{}}} (shared/errors/errors.json). */
 export class AppError extends HttpException {
   constructor(

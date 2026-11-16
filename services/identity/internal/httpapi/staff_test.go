@@ -179,6 +179,50 @@ func TestInternalStaffCreate(t *testing.T) {
 
 func staffPath(id string) string { return "/internal/identity/staff/" + id }
 
+// GET /internal/identity/staff/{id}: Backoffice superadmin yozuvini shu ma'lumotdan yaratadi.
+func TestInternalStaffGet(t *testing.T) {
+	e := newEnv(t)
+	mk := func(body map[string]any) string {
+		t.Helper()
+		r := e.do("POST", internalPath, body, internalHdr())
+		if r.Status != 201 {
+			t.Fatalf("yaratish: %d %v", r.Status, r.Body)
+		}
+		return r.str("id")
+	}
+	sa := mk(map[string]any{"phone": "+998907770031", "email": "Root@izgo.uz", "role": "superadmin", "name": "Root"})
+	op := mk(map[string]any{"phone": "+998907770032", "email": nil, "role": "operator", "name": "Operator"})
+
+	if r := e.do("GET", staffPath(sa), nil, nil); r.Status != 403 || r.errParam("reason") != "internal_only" {
+		t.Fatalf("token yo'q: %d %v", r.Status, r.Body)
+	}
+
+	r := e.do("GET", staffPath(sa), nil, internalHdr())
+	if r.Status != 200 || r.str("id") != sa || r.str("phone") != "+998907770031" || r.str("email") != "root@izgo.uz" ||
+		r.str("role") != "superadmin" || r.str("name") != "Root" || r.Body["active"] != true || len(r.Body) != 6 {
+		t.Fatalf("superadmin: %d %v", r.Status, r.Body)
+	}
+	if r = e.do("GET", staffPath(op), nil, internalHdr()); r.Status != 200 || r.Body["email"] != nil || r.str("role") != "operator" {
+		t.Fatalf("email'siz operator: %d %v", r.Status, r.Body)
+	}
+
+	// nofaol xodim ham qaytadi (holatni chaqiruvchi tekshiradi)
+	if r = e.do("PUT", staffPath(op), map[string]any{"active": false}, internalHdr()); r.Status != 200 {
+		t.Fatalf("bloklash: %d %v", r.Status, r.Body)
+	}
+	if r = e.do("GET", staffPath(op), nil, internalHdr()); r.Status != 200 || r.Body["active"] != false {
+		t.Fatalf("nofaol: %d %v", r.Status, r.Body)
+	}
+
+	missing := uuid.NewString()
+	if r = e.do("GET", staffPath(missing), nil, internalHdr()); r.Status != 404 || r.errKey() != "STAFF_NOT_FOUND" || r.errParam("staff_id") != missing {
+		t.Fatalf("topilmadi: %d %v", r.Status, r.Body)
+	}
+	if r = e.do("GET", staffPath("abc"), nil, internalHdr()); r.Status != 422 {
+		t.Fatalf("id UUID emas: %d", r.Status)
+	}
+}
+
 func TestInternalStaffUpdate(t *testing.T) {
 	e := newEnv(t)
 	mk := func(body map[string]any) string {

@@ -142,4 +142,26 @@ describe('xodimlar CRUD', () => {
     expect((await h.as('owner').get('/admin/v1/staff?cursor=%25%25')).body.error.params.fields).toEqual({ cursor: 'invalid' });
     expect((await h.as('owner').get('/admin/v1/staff?limit=1000')).status).toBe(422);
   });
+  it('F-10: tahrirlash/arxivlash — faqat creatable_roles dagi xodim; begona amal o\'zgartirmaydi va auditga tushmaydi', async () => {
+    const auditBefore = (await h.audit()).length;
+    // manager -> boshqa manager (o'z roli, creatable emas): ko'rinadi, lekin boshqarib bo'lmaydi
+    const put = await h.as('manager').put(`/admin/v1/staff/${h.people.manager2.id}`).send({ full_name: 'Hack' });
+    expect(put.body).toEqual({ error: { key: 'FORBIDDEN', params: { reason: 'role_not_manageable' } } });
+    const del = await h.as('manager').delete(`/admin/v1/staff/${h.people.manager2.id}`);
+    expect(del.status).toBe(403);
+    expect(del.body.error.params.reason).toBe('role_not_manageable');
+    // manager -> owner/superadmin: umuman ko'rinmaydi (mavjudlik oshkor bo'lmaydi)
+    for (const target of [h.people.owner.id, h.people.root.id]) {
+      const r = await h.as('manager').delete(`/admin/v1/staff/${target}`);
+      expect(r.status).toBe(404);
+      expect(r.body.error.key).toBe('STAFF_NOT_FOUND');
+    }
+    // operator/marketer (staff:write yo'q) — hech kimni tahrirlay olmaydi
+    expect((await h.as('op1').put(`/admin/v1/staff/${h.people.op2.id}`).send({ full_name: 'X' })).status).toBe(403);
+    expect((await h.as('marketer').delete(`/admin/v1/staff/${h.people.op2.id}`)).status).toBe(403);
+
+    const m2 = await h.as('root').get(`/admin/v1/staff/${h.people.manager2.id}`);
+    expect(m2.body).toMatchObject({ full_name: 'manager2', state: 'active' });
+    expect((await h.audit()).length).toBe(auditBefore);
+  });
 });

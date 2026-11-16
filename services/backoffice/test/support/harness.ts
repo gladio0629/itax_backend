@@ -83,7 +83,6 @@ export async function createHarness(over: Partial<AppConfig> = {}): Promise<Harn
     db: { host: '', port: 0, user: '', password: '', name: '' }, natsUrl: '',
     jwt: { publicKeyPem: PUBLIC_PEM, issuer: ISSUER }, rolesFile: `${process.cwd()}/../../shared/roles/roles.json`,
     tzOffsetHours: 5, publishApprovedOnResolved: true,
-    bootstrap: { email: 'boot@example.com', phone: '+998977777777', name: 'Root' },
     ...over,
   };
   const publisher = new FakePublisher();

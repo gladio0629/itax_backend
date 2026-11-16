@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { Actor, AuditService } from '../audit/audit.service';
 import { staffSnapshot } from '../auth/admin.guard';
-import { Errors } from '../common/errors';
+import { Errors, isUniqueViolation } from '../common/errors';
 import { applyCursor, decodeCursor, DEFAULT_LIMIT, Page, toPage } from '../common/pagination';
 import { Staff, StaffState } from '../entities/staff.entity';
 import { IdentityStaffPort } from '../ports/ports';
@@ -23,11 +23,6 @@ const toView = (s: Staff): StaffView => ({
   id: s.id, email: s.email, phone: s.phone, full_name: s.fullName, role: s.role, state: s.state,
   created_at: s.createdAt.toISOString(),
 });
-
-const isUnique = (e: unknown): boolean => {
-  const err = e as { code?: string; message?: string };
-  return err?.code === '23505' || /unique|duplicate/i.test(err?.message ?? '');
-};
 
 @Injectable()
 export class StaffService {
@@ -189,7 +184,7 @@ export class StaffService {
   }
 
   private async mapUnique(e: unknown, email: string | null, phone: string | null): Promise<unknown> {
-    if (!isUnique(e)) return e;
+    if (!isUniqueViolation(e)) return e;
     // PostgreSQL xatosi constraint nomini beradi; bo'lmasa (yoki ishonchsiz bo'lsa) qiymat bo'yicha tekshiramiz
     const c = (e as { constraint?: string; driverError?: { constraint?: string } });
     const name = c.constraint ?? c.driverError?.constraint;

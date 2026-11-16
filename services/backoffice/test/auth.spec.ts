@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { RedisSessionRevocationPort } from '../src/auth/session-revocation';
+import { Errors } from '../src/common/errors';
 import { Staff } from '../src/entities/staff.entity';
+import { IdentityStaffPort } from '../src/ports/ports';
 import { createHarness, Harness, makeToken } from './support/harness';
 
 describe('token va ruxsat tekshiruvi', () => {
@@ -78,16 +80,77 @@ describe('token va ruxsat tekshiruvi', () => {
 
   it('noma\'lum sub: superadmin tokeni bir marta provision qilinadi, boshqa rol — 403', async () => {
     const id = uuidv4();
+    h.mock.identityStaff.set(id, {
+      id, email: 'Real.Root@Example.com', phone: '+998935550001', fullName: 'Haqiqiy Root', role: 'superadmin', active: true,
+    });
+    const before = (await h.audit('staff.provision')).length;
     const t = `Bearer ${makeToken(id, { role: 'superadmin' })}`;
     const me = await h.http().get('/admin/v1/me').set('Authorization', t);
     expect(me.status).toBe(200);
-    expect(me.body).toMatchObject({ id, role: 'superadmin', email: 'boot@example.com' });
-    expect((await h.audit('staff.provision')).length).toBe(1);
+    // kontaktlar identity'dagi AYNAN shu akkauntniki (ADMIN_BOOTSTRAP_* emas)
+    expect(me.body).toMatchObject({ id, role: 'superadmin', email: 'real.root@example.com', full_name: 'Haqiqiy Root' });
+    const row = await h.ds.getRepository(Staff).findOneOrFail({ where: { id } });
+    expect(row).toMatchObject({ email: 'real.root@example.com', phone: '+998935550001', fullName: 'Haqiqiy Root', state: 'active' });
+    const prov = await h.audit('staff.provision');
+    expect(prov.length).toBe(before + 1);
+    expect(prov.find((a) => a.entity_id === id)?.after).toMatchObject({ email: 'real.root@example.com', phone: '+998935550001' });
     expect((await h.http().get('/admin/v1/me').set('Authorization', t)).status).toBe(200);
-    expect((await h.audit('staff.provision')).length).toBe(1);
+    expect((await h.audit('staff.provision')).length).toBe(before + 1);
 
     const op = `Bearer ${makeToken(uuidv4(), { role: 'owner' })}`;
     expect((await h.http().get('/admin/v1/me').set('Authorization', op)).status).toBe(403);
+  });
+
+  it('superadmin tokeni, lekin identity\'da yo\'q / nofaol / boshqa rol — 403, yozuv yaratilmaydi', async () => {
+    const before = (await h.audit('staff.provision')).length;
+    const absent = uuidv4();
+    const inactive = uuidv4();
+    const demoted = uuidv4();
+    h.mock.identityStaff.set(inactive, {
+      id: inactive, email: 'off@example.com', phone: '+998935550002', fullName: 'Off', role: 'superadmin', active: false,
+    });
+    h.mock.identityStaff.set(demoted, {
+      id: demoted, email: 'mgr@example.com', phone: '+998935550003', fullName: 'Mgr', role: 'manager', active: true,
+    });
+    for (const id of [absent, inactive, demoted]) {
+      const r = await h.http().get('/admin/v1/me').set('Authorization', `Bearer ${makeToken(id, { role: 'superadmin' })}`);
+      expect(r.status).toBe(403);
+      expect(r.body.error.params.reason).toBe('staff_inactive');
+      expect(await h.ds.getRepository(Staff).findOne({ where: { id } })).toBeNull();
+    }
+    expect((await h.audit('staff.provision')).length).toBe(before);
+  });
+
+  it('identity javob bermasa — 502 IDENTITY_UNAVAILABLE, yozuv yaratilmaydi; keyingi so\'rovda yaratiladi', async () => {
+    const id = uuidv4();
+    h.mock.identityStaff.set(id, {
+      id, email: 'later@example.com', phone: '+998935550004', fullName: 'Later', role: 'superadmin', active: true,
+    });
+    const port = h.app.get(IdentityStaffPort);
+    const spy = jest.spyOn(port, 'get').mockRejectedValueOnce(Errors.identityUnavailable('timeout'));
+    const t = `Bearer ${makeToken(id, { role: 'superadmin' })}`;
+    const r = await h.http().get('/admin/v1/me').set('Authorization', t);
+    expect(r.status).toBe(502);
+    expect(r.body).toEqual({ error: { key: 'IDENTITY_UNAVAILABLE', params: { reason: 'timeout' } } });
+    expect(await h.ds.getRepository(Staff).findOne({ where: { id } })).toBeNull();
+    expect((await h.http().get('/admin/v1/me').set('Authorization', t)).body).toMatchObject({ id, email: 'later@example.com' });
+    spy.mockRestore();
+  });
+
+  it('identity\'dagi email/telefon backoffice\'da boshqa xodimda band — kontaktsiz yaratiladi (kirish to\'silmaydi)', async () => {
+    const id = uuidv4();
+    const other = h.people.manager;
+    const taken = await h.ds.getRepository(Staff).findOneOrFail({ where: { id: other.id } });
+    h.mock.identityStaff.set(id, {
+      id, email: taken.email, phone: taken.phone, fullName: 'Clash Root', role: 'superadmin', active: true,
+    });
+    const r = await h.http().get('/admin/v1/me').set('Authorization', `Bearer ${makeToken(id, { role: 'superadmin' })}`);
+    expect(r.status).toBe(200);
+    expect(await h.ds.getRepository(Staff).findOneOrFail({ where: { id } }))
+      .toMatchObject({ email: null, phone: null, fullName: 'Clash Root', role: 'superadmin' });
+    // boshqa xodimning yozuviga tegilmagan
+    expect(await h.ds.getRepository(Staff).findOneOrFail({ where: { id: other.id } }))
+      .toMatchObject({ email: taken.email, phone: taken.phone });
   });
 });
 

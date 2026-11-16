@@ -305,6 +305,23 @@ func TestPostgres(t *testing.T) {
 		if err := repo.TouchStaffLogin(ctx, id, time.Now()); err != nil {
 			t.Fatal(err)
 		}
+		// InsertEvent: outbox'ga yoziladi, bir xil ID (idempotent logout) — jim o'tadi, ikki marta yuborilmaydi
+		lo, err := events.NewStaffLoggedOut(id, "superadmin", "sid-1", time.Now(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			if err := repo.InsertEvent(ctx, lo); err != nil {
+				t.Fatalf("InsertEvent %d: %v", i, err)
+			}
+		}
+		var cnt int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM events_outbox WHERE id = $1 AND published_at IS NULL`, lo.ID).Scan(&cnt); err != nil || cnt != 1 {
+			t.Fatalf("outbox: %d %v", cnt, err)
+		}
+		if _, err := pool.Exec(ctx, `DELETE FROM events_outbox WHERE id = $1`, lo.ID); err != nil {
+			t.Fatal(err)
+		}
 		bad := s
 		bad.ID, bad.Email, bad.Phone, bad.Role = uuid.New(), ptr("x@izgo.uz"), "+998901112200", "root"
 		if err := repo.EnsureStaff(ctx, bad); err == nil {

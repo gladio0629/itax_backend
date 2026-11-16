@@ -247,6 +247,14 @@ func (r *Repo) TouchStaffLogin(ctx context.Context, id uuid.UUID, at time.Time) 
 	return err
 }
 
+func (r *Repo) InsertEvent(ctx context.Context, e events.Event) error {
+	if _, err := r.pool.Exec(ctx, `INSERT INTO events_outbox (id, subject, payload, created_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO NOTHING`, e.ID, e.Subject, e.Payload, e.CreatedAt); err != nil {
+		return fmt.Errorf("outbox: %w", err)
+	}
+	return nil
+}
+
 // EnsureStaff — maqsadsiz ON CONFLICT: email (staff_users_email_key) yoki telefon (staff_users_phone_key)
 // band bo'lsa yozuv qo'shilmaydi.
 func (r *Repo) EnsureStaff(ctx context.Context, s auth.Staff) error {

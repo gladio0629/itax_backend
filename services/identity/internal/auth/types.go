@@ -165,6 +165,9 @@ type Repo interface {
 	GetStaffByPhone(ctx context.Context, phone string) (Staff, error)
 	GetStaff(ctx context.Context, id uuid.UUID) (Staff, error)
 	TouchStaffLogin(ctx context.Context, id uuid.UUID, at time.Time) error
+	// InsertEvent — hodisani outbox'ga yozadi (Relay NATS'ga yuboradi). Shu ID allaqachon bo'lsa — jim o'tadi
+	// (deterministik ID li takroriy hodisa, masalan idempotent logout).
+	InsertEvent(ctx context.Context, e events.Event) error
 	// EnsureStaff — idempotent: email yoki telefon band bo'lsa hech narsa qilmaydi (bootstrap uchun).
 	EnsureStaff(ctx context.Context, s Staff) error
 	// CreateStaff — yangi xodim; email/telefon band bo'lsa ErrStaffEmailTaken / ErrStaffPhoneTaken.

@@ -29,6 +29,24 @@ export class HttpIdentityStaffPort extends IdentityStaffPort {
   }
 
   /**
+   * GET /internal/identity/staff/{id} -> 200 {id, phone, email, role, name, active} | 404 STAFF_NOT_FOUND | 5xx.
+   * Faqat STAFF_NOT_FOUND kalitli 404 — "yo'q" (null). Kalitsiz 404/405 (eski identity), 5xx, timeout,
+   * shakli noto'g'ri javob — IDENTITY_UNAVAILABLE: identity'da xodim bormi-yo'qmi aniq emas.
+   */
+  async get(id: string): Promise<IdentityStaff | null> {
+    const r = await this.http.request('GET', `/internal/identity/staff/${encodeURIComponent(id)}`);
+    if (r.status === 404 && r.json?.error?.key === 'STAFF_NOT_FOUND') return null;
+    const b = r.json;
+    const strOrNull = (v: unknown) => v === null || typeof v === 'string';
+    if (r.status === 200 && isUuid(b?.id) && b.id.toLowerCase() === id.toLowerCase() && typeof b.phone === 'string'
+      && strOrNull(b.email) && typeof b.role === 'string' && typeof b.name === 'string' && typeof b.active === 'boolean') {
+      return { id: b.id.toLowerCase(), email: b.email, phone: b.phone, fullName: b.name, role: b.role, active: b.active };
+    }
+    this.log.error(`identity xodimni qaytarmadi (${id}): HTTP ${r.status} ${JSON.stringify(r.json?.error ?? null)}`);
+    throw Errors.identityUnavailable(r.status === 200 ? 'invalid_response' : `http_${r.status}`);
+  }
+
+  /**
    * PUT /internal/identity/staff/{id} -> 200 | 404 STAFF_NOT_FOUND | 409 | 422 | 5xx.
    * Har doim to'liq joriy holat yuboriladi (identity qisman yangilashni ham qabul qiladi). `active: false` —
    * bloklangan/arxivlangan xodim identity orqali ham kira olmaydi. Xato bo'lsa backoffice tranzaksiyasi
