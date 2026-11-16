@@ -1,9 +1,20 @@
+# Sirlar (F-16): hech qachon commit qilinmaydi
 .env
+.env.*
+!.env.example
+secrets/
+*.bak
+*.bak-*
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.srl
 node_modules/
 dist/
 build/
 .gradle/
-secrets/
 uploads/
 .claude/settings.local.json
 *.log
