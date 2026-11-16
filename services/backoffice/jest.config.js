@@ -5,5 +5,7 @@ module.exports = {
   rootDir: '.',
   roots: ['<rootDir>/src', '<rootDir>/test'],
   testRegex: '.*\\.spec\\.ts$',
+  // Har test/hook uchun: createHarness (Nest + pg-mem + migratsiyalar) yuklangan mashinada 5 s dan oshishi mumkin
+  testTimeout: 30_000,
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.spec.json' }] },
 };

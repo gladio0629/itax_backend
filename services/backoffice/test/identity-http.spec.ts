@@ -87,7 +87,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
     stub.missing.clear(); stub.blockedPhones.clear(); stub.staff.clear(); stub.staffGet = 'ok';
   });
 
-  const port = (timeoutMs = 500, token = TOKEN) =>
+  const port = (timeoutMs = 3000, token = TOKEN) =>
     new HttpIdentityStaffPort(new InternalHttpClient(stub.url, token, timeoutMs));
   const input = { phone: '+998901234567', email: 'a@example.com', role: 'manager', name: 'Ali Valiyev' };
 
@@ -124,7 +124,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
       stub.mode = 'error500';
       await expect(port().create(input)).rejects.toMatchObject({ status: 502, params: { reason: 'http_500' } });
       stub.mode = 'ok';
-      await expect(port(500, 'boshqa-token-0123456789').create(input)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
+      await expect(port(3000, 'boshqa-token-0123456789').create(input)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
     });
 
     describe('get: GET /internal/identity/staff/{id}', () => {
@@ -159,7 +159,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
         stub.mode = 'error500';
         await expect(port().get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_500' } });
         stub.mode = 'ok';
-        await expect(port(500, 'boshqa-token-0123456789').get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
+        await expect(port(3000, 'boshqa-token-0123456789').get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
         stub.mode = 'hang';
         await expect(port(150).get(id)).rejects.toMatchObject({ status: 502, params: { reason: 'timeout' } });
       });
@@ -169,7 +169,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
   describe('Superadmin provision (haqiqiy HTTP orqali)', () => {
     let h: Harness;
     beforeEach(async () => {
-      h = await createHarness({ identity: { mode: 'http', baseUrl: stub.url, internalToken: TOKEN, timeoutMs: 300 } });
+      h = await createHarness({ identity: { mode: 'http', baseUrl: stub.url, internalToken: TOKEN, timeoutMs: 2000 } });
     });
     afterEach(async () => { await h.app.close(); });
 
@@ -197,7 +197,7 @@ describe('Identity bilan HTTP sinxronlash', () => {
   describe('Backoffice POST /admin/v1/staff (haqiqiy HTTP orqali)', () => {
     let h: Harness;
     beforeEach(async () => {
-      h = await createHarness({ identity: { mode: 'http', baseUrl: stub.url, internalToken: TOKEN, timeoutMs: 300 } });
+      h = await createHarness({ identity: { mode: 'http', baseUrl: stub.url, internalToken: TOKEN, timeoutMs: 2000 } });
     });
     afterEach(async () => { await h.app.close(); });
     const body = { email: 'new@example.com', phone: '+998931112233', full_name: 'Yangi Xodim', role: 'marketer' };

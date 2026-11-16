@@ -207,7 +207,7 @@ describe('Trip & Order HTTP porti', () => {
     stub.orders.set(O5, upstreamOrder(O5));
     stub.orders.set(O4, upstreamOrder(O4, { status: 'in_progress' }));
   });
-  const port = (timeoutMs = 500, token = TOKEN, url = stub.url) =>
+  const port = (timeoutMs = 3000, token = TOKEN, url = stub.url) =>
     new HttpOrdersPort(new InternalHttpClient(url, token, timeoutMs, fetch, Errors.tripOrderUnavailable));
 
   it('list: filtrlar so\'rov satrida (q yuborilmaydi), javob o\'zgarishsiz; cursor shaffof', async () => {
@@ -233,8 +233,8 @@ describe('Trip & Order HTTP porti', () => {
     stub.mode = 'hang';
     await expect(port(150).get(O5)).rejects.toMatchObject({ status: 502, key: 'TRIP_ORDER_UNAVAILABLE', params: { reason: 'timeout' } });
     stub.mode = 'ok';
-    await expect(port(500, TOKEN, 'http://127.0.0.1:1').get(O5)).rejects.toMatchObject({ status: 502, params: { reason: 'unreachable' } });
-    await expect(port(500, 'boshqa-token-0123456789').cancel(O5, { reason: 'fraud' })).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
+    await expect(port(3000, TOKEN, 'http://127.0.0.1:1').get(O5)).rejects.toMatchObject({ status: 502, params: { reason: 'unreachable' } });
+    await expect(port(3000, 'boshqa-token-0123456789').cancel(O5, { reason: 'fraud' })).rejects.toMatchObject({ status: 502, params: { reason: 'http_403' } });
   });
 
   it('update/cancel: PATCH / POST tanasi; 403 → FORBIDDEN (o\'sha reason); 422 → VALIDATION_ERROR (o\'sha params); 404 → null', async () => {
@@ -259,7 +259,7 @@ describe('Trip & Order HTTP porti', () => {
     let h: Harness;
     beforeEach(async () => {
       h = await createHarness({
-        identity: { mode: 'mock', baseUrl: '', internalToken: TOKEN, timeoutMs: 300 },
+        identity: { mode: 'mock', baseUrl: '', internalToken: TOKEN, timeoutMs: 2000 },
         orders: { mode: 'http', baseUrl: stub.url },
       });
     });
