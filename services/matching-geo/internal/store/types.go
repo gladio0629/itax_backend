@@ -3,7 +3,10 @@
 // Kalitlar:
 //
 //	drivers:geo              GEO (zset): a'zo = haydovchi UUID
-//	driver:{id}:loc          "lat,lng,unix_ms"  EX LocationTTL  — jonlilik belgisi va oldingi nuqta (tezlik tekshiruvi)
+//	driver:{id}:loc          "lat,lng,unix_ms,since_ms"  EX LocationTTL  — jonlilik belgisi, oldingi nuqta (tezlik tekshiruvi)
+//	                         va shu nuqta qachondan beri o'zgarmagani (since_ms)
+//	driver:{id}:stale        since_ms  EX LocationTTL — F-11: GPS StationaryAfter dan ko'p o'zgarmagan, avtomatik offline
+//	                         (qo'lda o'rnatiladigan driver:{id}:status ga tegilmaydi; nuqta o'zgarsa o'chadi)
 //	driver:{id}:status       available | busy | offline          (kalit yo'q = available)
 //	driver:{id}:profile      HASH state, seats, car_class, vehicle_type
 //	driver:{id}:trip         joriy safar ID si (busy bo'lganda)

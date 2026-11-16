@@ -23,6 +23,9 @@ const (
 type Options struct {
 	LocationTTL time.Duration
 	BusyTTL     time.Duration
+	// StationaryAfter (F-11) — GPS nuqtasi aynan bir xil qolsa, shuncha vaqtdan keyin haydovchi avtomatik offline
+	// (qidiruvda ko'rinmaydi). 0 — o'chirilgan.
+	StationaryAfter time.Duration
 }
 
 type Store struct {
@@ -36,33 +39,85 @@ func New(rdb redis.Cmdable, opt Options) *Store { return &Store{rdb: rdb, opt: o
 
 type Location struct {
 	Lat, Lng float64
-	At       time.Time
+	At       time.Time // oxirgi yangilanish
+	Since    time.Time // shu nuqta qachondan beri o'zgarmagan (birinchi marta ko'rilgan payt)
 }
 
-// Bitta atomik amal: oldingi nuqtani o'qish + GEOADD + jonlilik kaliti (TTL). Oldingi nuqta tezlik tekshiruvi uchun.
+// Stale (F-11, o'zgarmas GPS) holatining o'zgarishi — log faqat o'tish paytida yoziladi.
+type StaleChange int
+
+const (
+	StaleNone      StaleChange = iota // o'zgarish yo'q
+	StaleEntered                      // hozirgina offline deb belgilandi
+	StaleRecovered                    // nuqta o'zgardi: marker olib tashlandi
+)
+
+// Bitta atomik amal: oldingi nuqtani o'qish + GEOADD + jonlilik kaliti (TTL) + o'zgarmas-nuqta markeri.
+// Oldingi nuqta tezlik tekshiruvi uchun. "Bir xil nuqta" — koordinata satrlari aynan teng (fmtFloat, epsilon yo'q):
+// haqiqiy GPS turgan joyida ham tebranadi, aynan bir xil qiymat — qotib qolgan yoki soxta GPS alomati.
+// Band (busy) haydovchi belgilanmaydi (safar davomida tirbandlik/kutish bo'lishi mumkin).
+//
+// KEYS: geo, loc, status, stale. ARGV: id, lng, lat, now_ms, ttl_s, stationary_ms (0 — o'chiq).
+// Natija: {oldingi loc yoki ”, o'tish (0/1/2), since_ms}.
 var updateScript = redis.NewScript(`
 local prev = redis.call('GET', KEYS[2])
+local since = ARGV[4]
+local same = false
+if prev then
+  local plat, plng, pat, psince = string.match(prev, '^([^,]+),([^,]+),([^,]+),?([^,]*)$')
+  if plat == ARGV[3] and plng == ARGV[2] then
+    same = true
+    if psince and psince ~= '' then since = psince else since = pat end
+  end
+end
 redis.call('GEOADD', KEYS[1], ARGV[2], ARGV[3], ARGV[1])
-redis.call('SET', KEYS[2], ARGV[3] .. ',' .. ARGV[2] .. ',' .. ARGV[4], 'EX', ARGV[5])
-if prev then return prev end
-return ''
+redis.call('SET', KEYS[2], ARGV[3] .. ',' .. ARGV[2] .. ',' .. ARGV[4] .. ',' .. since, 'EX', ARGV[5])
+local change = 0
+local limit = tonumber(ARGV[6])
+local busy = redis.call('GET', KEYS[3]) == 'busy'
+if same and limit > 0 and (not busy) and (tonumber(ARGV[4]) - tonumber(since)) >= limit then
+  local had = redis.call('EXISTS', KEYS[4])
+  redis.call('SET', KEYS[4], since, 'EX', ARGV[5])
+  if had == 0 then change = 1 end
+elseif redis.call('DEL', KEYS[4]) == 1 then
+  change = 2
+end
+return {prev or '', change, since}
 `)
 
-// UpdateLocation — GEOADD + TTL. Oldingi (hali o'chmagan) nuqtani qaytaradi, bo'lmasa nil.
-func (s *Store) UpdateLocation(ctx context.Context, id uuid.UUID, lat, lng float64, now time.Time) (*Location, error) {
-	res, err := updateScript.Run(ctx, s.rdb, []string{geoKey, driverKey(id, "loc")},
-		id.String(), fmtFloat(lng), fmtFloat(lat), now.UnixMilli(), int(s.opt.LocationTTL.Seconds())).Text()
+// UpdateLocation — GEOADD + TTL. Oldingi (hali o'chmagan) nuqtani (bo'lmasa nil) va o'zgarmas-nuqta holati o'zgarishini
+// qaytaradi. Stale marker LocationTTL bilan yashaydi: haydovchi yuborishni to'xtatsa, u ham o'chadi.
+func (s *Store) UpdateLocation(ctx context.Context, id uuid.UUID, lat, lng float64, now time.Time) (*Location, StaleChange, error) {
+	res, err := updateScript.Run(ctx, s.rdb,
+		[]string{geoKey, driverKey(id, "loc"), driverKey(id, "status"), driverKey(id, "stale")},
+		id.String(), fmtFloat(lng), fmtFloat(lat), now.UnixMilli(), int(s.opt.LocationTTL.Seconds()),
+		s.opt.StationaryAfter.Milliseconds()).Slice()
 	if err != nil {
-		return nil, fmt.Errorf("store: joylashuv: %w", err)
+		return nil, StaleNone, fmt.Errorf("store: joylashuv: %w", err)
 	}
-	return parseLoc(res), nil
+	if len(res) != 3 {
+		return nil, StaleNone, fmt.Errorf("store: joylashuv: kutilmagan javob: %v", res)
+	}
+	prev, _ := res[0].(string)
+	change, _ := res[1].(int64)
+	return parseLoc(prev), StaleChange(change), nil
+}
+
+// IsStale — haydovchi o'zgarmas GPS sababli avtomatik offline deb belgilanganmi (F-11).
+func (s *Store) IsStale(ctx context.Context, id uuid.UUID) (bool, error) {
+	n, err := s.rdb.Exists(ctx, driverKey(id, "stale")).Result()
+	if err != nil {
+		return false, fmt.Errorf("store: stale: %w", err)
+	}
+	return n > 0, nil
 }
 
 func fmtFloat(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
+// parseLoc — "lat,lng,at_ms[,since_ms]" (eski 3 maydonli yozuvlar ham o'qiladi: since = at).
 func parseLoc(s string) *Location {
 	parts := strings.Split(s, ",")
-	if len(parts) != 3 {
+	if len(parts) != 3 && len(parts) != 4 {
 		return nil
 	}
 	lat, e1 := strconv.ParseFloat(parts[0], 64)
@@ -71,12 +126,27 @@ func parseLoc(s string) *Location {
 	if e1 != nil || e2 != nil || e3 != nil {
 		return nil
 	}
-	return &Location{Lat: lat, Lng: lng, At: time.UnixMilli(ms)}
+	since := ms
+	if len(parts) == 4 {
+		v, err := strconv.ParseInt(parts[3], 10, 64)
+		if err != nil {
+			return nil
+		}
+		since = v
+	}
+	return &Location{Lat: lat, Lng: lng, At: time.UnixMilli(ms), Since: time.UnixMilli(since)}
 }
 
-// Anomaly — F-11 signali.
+// Anomaly kind'lari (stream'dagi "kind").
+const (
+	AnomalySpeedJump  = "speed_jump"
+	AnomalyStationary = "stationary"
+)
+
+// Anomaly — F-11 signali. Kind bo'sh bo'lsa speed_jump.
 type Anomaly struct {
 	DriverID  uuid.UUID
+	Kind      string
 	SpeedKMH  float64
 	DistanceM float64
 	Elapsed   time.Duration
@@ -85,10 +155,14 @@ type Anomaly struct {
 
 // RecordAnomaly — signalni cheklangan Redis stream'iga yozadi (so'nggi ~1000 ta).
 func (s *Store) RecordAnomaly(ctx context.Context, a Anomaly) error {
+	kind := a.Kind
+	if kind == "" {
+		kind = AnomalySpeedJump
+	}
 	err := s.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: anomalyStream, MaxLen: 1000, Approx: true,
 		Values: map[string]any{
-			"driver_id": a.DriverID.String(), "kind": "speed_jump", "speed_kmh": fmtFloat(a.SpeedKMH),
+			"driver_id": a.DriverID.String(), "kind": kind, "speed_kmh": fmtFloat(a.SpeedKMH),
 			"distance_m": fmtFloat(a.DistanceM), "elapsed_ms": a.Elapsed.Milliseconds(), "at": a.At.UTC().Format(time.RFC3339Nano),
 		},
 	}).Err()
@@ -236,6 +310,7 @@ func (s *Store) Find(ctx context.Context, q Query) ([]Candidate, error) {
 	type probe struct {
 		id      uuid.UUID
 		loc     *redis.StringCmd
+		stale   *redis.IntCmd
 		status  *redis.StringCmd
 		profile *redis.MapStringStringCmd
 		g       redis.GeoLocation
@@ -250,6 +325,7 @@ func (s *Store) Find(ctx context.Context, q Query) ([]Candidate, error) {
 		probes = append(probes, probe{
 			id: id, g: g,
 			loc:     pipe.Get(ctx, driverKey(id, "loc")),
+			stale:   pipe.Exists(ctx, driverKey(id, "stale")),
 			status:  pipe.Get(ctx, driverKey(id, "status")),
 			profile: pipe.HGetAll(ctx, driverKey(id, "profile")),
 		})
@@ -265,6 +341,9 @@ func (s *Store) Find(ctx context.Context, q Query) ([]Candidate, error) {
 		live := p.loc.Err() == nil
 		if !live {
 			stale = append(stale, p.g.Name)
+			continue
+		}
+		if p.stale.Val() > 0 { // F-11: GPS o'zgarmagan — avtomatik offline (geo-to'plamdan o'chirilmaydi, nuqta jonli)
 			continue
 		}
 		prof, ok := parseProfile(p.profile.Val())

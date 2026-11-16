@@ -83,7 +83,8 @@ const (
 	baseLng = 69.2797
 )
 
-func newEnv(t *testing.T) *env {
+// newEnv — opts: store/service sozlamalarini o'zgartirish (masalan, F-11 StationaryAfter).
+func newEnv(t *testing.T, opts ...func(*store.Options, *service.Options)) *env {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -93,10 +94,15 @@ func newEnv(t *testing.T) *env {
 	log := slog.New(slog.NewTextHandler(logs, nil))
 	router, _ := geo.NewHaversineRouter(1.3, 30)
 	pub := &capturePub{}
-	st := store.New(rdb, store.Options{LocationTTL: 2 * time.Minute, BusyTTL: 24 * time.Hour})
-	svc := service.New(st, router, pub, service.Options{
+	stOpt := store.Options{LocationTTL: 2 * time.Minute, BusyTTL: 24 * time.Hour}
+	svcOpt := service.Options{
 		MaxSpeedKMH: 300, MinJumpM: 200, DefaultRadiusM: 50_000, MaxRadiusM: 200_000, MaxCandidates: 500, OfferTTL: 2 * time.Minute,
-	}, log).WithClock(clk.Now)
+	}
+	for _, o := range opts {
+		o(&stOpt, &svcOpt)
+	}
+	st := store.New(rdb, stOpt)
+	svc := service.New(st, router, pub, svcOpt, log).WithClock(clk.Now)
 	jwtPub, jwtPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)

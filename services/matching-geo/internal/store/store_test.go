@@ -46,7 +46,7 @@ func (e *env) driver(km float64, p store.Profile) uuid.UUID {
 	e.t.Helper()
 	id := uuid.New()
 	lat, lng := north(km)
-	if _, err := e.st.UpdateLocation(ctx, id, lat, lng, e.now); err != nil {
+	if _, _, err := e.st.UpdateLocation(ctx, id, lat, lng, e.now); err != nil {
 		e.t.Fatal(err)
 	}
 	if err := e.st.SetProfile(ctx, id, p); err != nil {
@@ -154,7 +154,7 @@ func TestLocationTTLExpiry(t *testing.T) {
 	}
 	// yangi joylashuv — qaytadi
 	lat, lng := north(1)
-	if prev, err := e.st.UpdateLocation(ctx, d, lat, lng, e.now); err != nil || prev != nil {
+	if prev, _, err := e.st.UpdateLocation(ctx, d, lat, lng, e.now); err != nil || prev != nil {
 		t.Errorf("muddati o'tgach oldingi nuqta bo'lmasligi kerak: %+v %v", prev, err)
 	}
 	if got := e.find(store.Query{}); len(got) != 1 {
@@ -162,7 +162,7 @@ func TestLocationTTLExpiry(t *testing.T) {
 	}
 	// yangilanib turgan haydovchi TTL ni uzaytiradi
 	e.mr.FastForward(90 * time.Second)
-	if _, err := e.st.UpdateLocation(ctx, d, lat, lng, e.now); err != nil {
+	if _, _, err := e.st.UpdateLocation(ctx, d, lat, lng, e.now); err != nil {
 		t.Fatal(err)
 	}
 	e.mr.FastForward(90 * time.Second)
@@ -191,10 +191,10 @@ func TestSweepRemovesStaleMembers(t *testing.T) {
 func TestUpdateLocationReturnsPrevious(t *testing.T) {
 	e := newEnv(t)
 	id := uuid.New()
-	if prev, _ := e.st.UpdateLocation(ctx, id, 41.0, 69.0, e.now); prev != nil {
+	if prev, _, _ := e.st.UpdateLocation(ctx, id, 41.0, 69.0, e.now); prev != nil {
 		t.Fatal("birinchi marta oldingi nuqta yo'q")
 	}
-	prev, err := e.st.UpdateLocation(ctx, id, 41.5, 69.5, e.now.Add(10*time.Second))
+	prev, _, err := e.st.UpdateLocation(ctx, id, 41.5, 69.5, e.now.Add(10*time.Second))
 	if err != nil || prev == nil || prev.Lat != 41.0 || prev.Lng != 69.0 || prev.At.UnixMilli() != e.now.UnixMilli() {
 		t.Fatalf("prev = %+v %v", prev, err)
 	}
@@ -216,7 +216,7 @@ func TestFindFilters(t *testing.T) {
 	_ = e.st.SetProfile(ctx, uuid.New(), active(4)) // joylashuvsiz
 	noProfile := uuid.New()
 	lat, lng := north(8)
-	_, _ = e.st.UpdateLocation(ctx, noProfile, lat, lng, e.now)
+	_, _, _ = e.st.UpdateLocation(ctx, noProfile, lat, lng, e.now)
 
 	if _, err := e.st.MarkBusy(ctx, busy, uuid.New()); err != nil {
 		t.Fatal(err)
@@ -371,5 +371,79 @@ func TestRecordAnomaly(t *testing.T) {
 	msgs, err := e.rdb.XRange(ctx, "matching:gps-anomalies", "-", "+").Result()
 	if err != nil || len(msgs) != 1 || msgs[0].Values["driver_id"] != id.String() || msgs[0].Values["kind"] != "speed_jump" || msgs[0].Values["speed_kmh"] != "1234.5" {
 		t.Fatalf("%+v %v", msgs, err)
+	}
+}
+
+// TestStationaryGoesOffline (F-11) — GPS nuqtasi aynan bir xil qolsa 5 daqiqadan keyin haydovchi qidiruvdan chiqadi
+// (o'tish faqat bir marta qaytadi), nuqta o'zgarganda qaytadi; band haydovchi belgilanmaydi.
+func TestStationaryGoesOffline(t *testing.T) {
+	newStationary := func(t *testing.T) *env {
+		e := newEnv(t)
+		e.st = store.New(e.rdb, store.Options{LocationTTL: 2 * time.Minute, BusyTTL: 24 * time.Hour, StationaryAfter: 5 * time.Minute})
+		return e
+	}
+	type step struct {
+		after      time.Duration // e.now dan
+		dLatKM     float64       // nuqta siljishi (0 — aynan bir xil)
+		want       store.StaleChange
+		wantFound  bool
+		wantMarked bool
+	}
+	cases := []struct {
+		name  string
+		busy  bool
+		steps []step
+	}{
+		{"5 daqiqa o'zgarmas -> offline, siljisa qaytadi", false, []step{
+			{0, 0, store.StaleNone, true, false},
+			{1 * time.Minute, 0, store.StaleNone, true, false},
+			{4*time.Minute + 59*time.Second, 0, store.StaleNone, true, false},
+			{5 * time.Minute, 0, store.StaleEntered, false, true},
+			{6 * time.Minute, 0, store.StaleNone, false, true}, // takroriy o'tish yo'q
+			{7 * time.Minute, 0.01, store.StaleRecovered, true, false},
+			{8 * time.Minute, 0.01, store.StaleNone, true, false},
+		}},
+		{"kichik tebranish hisobni qayta boshlaydi", false, []step{
+			{0, 0, store.StaleNone, true, false},
+			{4 * time.Minute, 0, store.StaleNone, true, false},
+			{4*time.Minute + 30*time.Second, 0.001, store.StaleNone, true, false},
+			{5*time.Minute + 30*time.Second, 0.001, store.StaleNone, true, false},
+			{9*time.Minute + 30*time.Second, 0.001, store.StaleEntered, false, true},
+		}},
+		{"band haydovchi belgilanmaydi", true, []step{
+			{0, 0, store.StaleNone, false, false},
+			{5 * time.Minute, 0, store.StaleNone, false, false},
+			{10 * time.Minute, 0, store.StaleNone, false, false},
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newStationary(t)
+			id := uuid.New()
+			if err := e.st.SetProfile(ctx, id, active(4)); err != nil {
+				t.Fatal(err)
+			}
+			if c.busy {
+				if _, err := e.st.MarkBusy(ctx, id, uuid.New()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i, s := range c.steps {
+				lat, lng := north(1 + s.dLatKM)
+				_, ch, err := e.st.UpdateLocation(ctx, id, lat, lng, e.now.Add(s.after))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ch != s.want {
+					t.Fatalf("%d-qadam (+%v): o'tish %v, kutilgan %v", i, s.after, ch, s.want)
+				}
+				if marked, _ := e.st.IsStale(ctx, id); marked != s.wantMarked {
+					t.Fatalf("%d-qadam: IsStale=%v, kutilgan %v", i, marked, s.wantMarked)
+				}
+				if found := len(e.find(store.Query{})) == 1; found != s.wantFound {
+					t.Fatalf("%d-qadam: qidiruvda=%v, kutilgan %v", i, found, s.wantFound)
+				}
+			}
+		})
 	}
 }

@@ -31,6 +31,8 @@ type Config struct {
 	// F-11: ikki joylashuv orasidagi tezlik shundan oshsa (va masofa MinJumpM dan katta bo'lsa) signal.
 	MaxSpeedKMH float64 `envconfig:"MAX_SPEED_KMH" default:"300"`
 	MinJumpM    float64 `envconfig:"MIN_JUMP_M" default:"200"` // GPS shovqini signal bermasligi uchun
+	// F-11: GPS nuqtasi aynan bir xil qolsa, shuncha vaqtdan keyin haydovchi avtomatik offline (0 — o'chirilgan).
+	StationaryAfter time.Duration `envconfig:"GPS_STATIONARY_AFTER" default:"5m"`
 
 	DefaultRadiusM float64 `envconfig:"DEFAULT_RADIUS_M" default:"50000"`
 	MaxRadiusM     float64 `envconfig:"MAX_RADIUS_M" default:"200000"`
@@ -76,6 +78,9 @@ func (c Config) validate() error {
 		if v <= 0 {
 			errs = append(errs, fmt.Errorf("%s musbat bo'lishi kerak", name))
 		}
+	}
+	if c.StationaryAfter < 0 {
+		errs = append(errs, errors.New("GPS_STATIONARY_AFTER manfiy bo'lmasligi kerak"))
 	}
 	if c.MaxSpeedKMH <= 0 || c.MinJumpM < 0 {
 		errs = append(errs, errors.New("MAX_SPEED_KMH musbat, MIN_JUMP_M manfiy bo'lmasligi kerak"))

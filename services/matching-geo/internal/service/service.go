@@ -15,12 +15,14 @@ import (
 )
 
 type Options struct {
-	MaxSpeedKMH    float64
-	MinJumpM       float64
-	DefaultRadiusM float64
-	MaxRadiusM     float64
-	MaxCandidates  int
-	OfferTTL       time.Duration
+	MaxSpeedKMH float64
+	MinJumpM    float64
+	// StationaryAfter — faqat log/hisobot uchun (asosiy mantiq store.Options.StationaryAfter da).
+	StationaryAfter time.Duration
+	DefaultRadiusM  float64
+	MaxRadiusM      float64
+	MaxCandidates   int
+	OfferTTL        time.Duration
 }
 
 // OfferPublisher — offer.created ni yuboradi (NATS JetStream).
@@ -63,26 +65,51 @@ func SpeedJump(prev *store.Location, lat, lng float64, now time.Time, maxKMH, mi
 type LocationResult struct {
 	Suspicious bool
 	SpeedKMH   float64
+	// Stationary — GPS StationaryAfter dan ko'p o'zgarmagan: haydovchi avtomatik offline (qidiruvda ko'rinmaydi).
+	Stationary bool
 }
 
-// UpdateLocation — GEOADD + TTL. Tezlik sakrashi (>MaxSpeedKMH) bo'lsa SIGNAL beriladi: log (WARN), Redis stream
+// UpdateLocation — GEOADD + TTL. Tezlik sakrashi (>MaxSpeedKMH) bo'lsa SIGNAL beriladi: log (ERROR, "ALERT"), Redis stream
 // va javobdagi flag. Nuqta baribir saqlanadi (mock-location aniqlash — 2-bosqich).
+// GPS nuqtasi aynan bir xil qolsa (StationaryAfter, default 5 daqiqa) haydovchi offline deb belgilanadi; log faqat
+// holat o'zgargan paytda yoziladi (har yangilanishda emas).
 func (s *Service) UpdateLocation(ctx context.Context, id uuid.UUID, lat, lng float64) (LocationResult, error) {
 	now := s.now()
-	prev, err := s.st.UpdateLocation(ctx, id, lat, lng, now)
+	prev, change, err := s.st.UpdateLocation(ctx, id, lat, lng, now)
 	if err != nil {
 		return LocationResult{}, err
 	}
 	kmh, sus := SpeedJump(prev, lat, lng, now, s.opt.MaxSpeedKMH, s.opt.MinJumpM)
 	if sus {
 		dist := geo.Haversine(geo.Point{Lat: prev.Lat, Lng: prev.Lng}, geo.Point{Lat: lat, Lng: lng})
-		s.log.WarnContext(ctx, "F-11: GPS tezlik sakrashi", "driver_id", id, "speed_kmh", math.Round(kmh), "distance_m", math.Round(dist),
-			"elapsed_s", now.Sub(prev.At).Seconds(), "limit_kmh", s.opt.MaxSpeedKMH)
+		s.log.ErrorContext(ctx, "ALERT F-11: GPS tezlik sakrashi", "alert", "gps_speed_jump", "driver_id", id,
+			"speed_kmh", math.Round(kmh), "distance_m", math.Round(dist), "elapsed_s", now.Sub(prev.At).Seconds(), "limit_kmh", s.opt.MaxSpeedKMH)
 		if err := s.st.RecordAnomaly(ctx, store.Anomaly{DriverID: id, SpeedKMH: kmh, DistanceM: dist, Elapsed: now.Sub(prev.At), At: now}); err != nil {
 			s.log.ErrorContext(ctx, "anomaliyani yozib bo'lmadi", "driver_id", id, "err", err)
 		}
 	}
-	return LocationResult{Suspicious: sus, SpeedKMH: kmh}, nil
+	stationary := change == store.StaleEntered
+	switch change {
+	case store.StaleEntered:
+		still := time.Duration(0)
+		if prev != nil {
+			still = now.Sub(prev.Since)
+		}
+		s.log.WarnContext(ctx, "F-11: GPS o'zgarmayapti — haydovchi avtomatik offline", "alert", "gps_stationary", "driver_id", id,
+			"unchanged_s", math.Round(still.Seconds()), "limit_s", s.opt.StationaryAfter.Seconds())
+		if err := s.st.RecordAnomaly(ctx, store.Anomaly{DriverID: id, Kind: store.AnomalyStationary, Elapsed: still, At: now}); err != nil {
+			s.log.ErrorContext(ctx, "anomaliyani yozib bo'lmadi", "driver_id", id, "err", err)
+		}
+	case store.StaleRecovered:
+		s.log.InfoContext(ctx, "F-11: GPS yana o'zgarmoqda — haydovchi qidiruvga qaytdi", "driver_id", id)
+	}
+	if change == store.StaleNone && prev != nil && s.opt.StationaryAfter > 0 {
+		// allaqachon stale holatda davom etmoqda (log takrorlanmaydi)
+		if ok, err := s.st.IsStale(ctx, id); err == nil {
+			stationary = ok
+		}
+	}
+	return LocationResult{Suspicious: sus, SpeedKMH: kmh, Stationary: stationary}, nil
 }
 
 // ---------------------------------------------------------------- qidiruv
