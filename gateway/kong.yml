@@ -50,6 +50,17 @@ services:
         paths: ["/admin/v1/auth"]
         strip_path: false
         plugins:
+        # F-08: /admin/v1/auth/* (identity) ham backoffice'dagi /admin/v1/* bilan bir xil xavfsizlik sarlavhalarini oladi
+        # (services/backoffice/src/common/security-headers.ts). Javoblar keshlanmaydi.
+        - name: response-transformer
+          config:
+            add:
+              headers:
+                - "Content-Security-Policy:default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+                - "X-Frame-Options:DENY"
+                - "X-Content-Type-Options:nosniff"
+                - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+                - "Cache-Control:no-store"
         - name: rate-limiting
           config:
             minute: 10
