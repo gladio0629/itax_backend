@@ -125,7 +125,7 @@ onlyback/
 - Formula **[OCHIQ]** (hujjatda tasdiqlanmagan), shuning uchun hammasi `pricing_db.tariffs` da: `base_fare`, `per_km_rate`, `seat_multiplier`,
   `car_class_multipliers`, `vehicle_multipliers`, `fuel_surcharge` (+ `min_fare`, `rounding_step`, `commission_bps`). Boshlang'ich qiymatlar —
   `migrations/0002_default_tariff.up.sql` (taklif). Pricing tarifni faqat o'qiydi; yangisini Backoffice yozadi (yangi `version`, `active = true`).
-- Tarif Redis'da 5 daqiqa keshlanadi (`TARIFF_CACHE_TTL`); Redis ishlamasa bazadan o'qiladi. Masofa va davomiylik — Mapbox Directions (`routes[0].distance` / `duration`, `driving` profili); `MAPBOX_MODE=mock`, token yo'q yoki Mapbox javob bermasa (3 s timeout; xatodan keyin 30 s tanaffus) — Haversine × `ROAD_FACTOR` (1.3), davomiylik = masofa / `AVG_SPEED_KMH` (30). Manba `shared/geo` da, Matching & Geo bilan bir xil.
+- Tarif Redis'da 5 daqiqa keshlanadi (`TARIFF_CACHE_TTL`); Redis ishlamasa bazadan o'qiladi. Masofa va davomiylik — Mapbox Directions (`routes[0].distance` / `duration`, `driving` profili); `MAPBOX_MODE=mock`, token yo'q yoki Mapbox javob bermasa (1.5 s timeout — Trip & Order'ning `EXTERNAL_TIMEOUT` 3 s dan kichik; xatodan keyin 30 s tanaffus) — Haversine × `ROAD_FACTOR` (1.3), davomiylik = masofa / `AVG_SPEED_KMH` (30). Manba `shared/geo` da, Matching & Geo bilan bir xil.
 - Trip & Order `PRICING_URL` berilganda (compose'da default) shu servisni chaqiradi; javobdagi `lines` (narx tarkibi, yig'indisi = narx)
   `POST /api/v1/orders/quote` va buyurtmada qaytadi. `PRICING_URL` bo'sh bo'lsa — ichki mock.
 
@@ -135,7 +135,7 @@ onlyback/
   yo'lovchi tokeni → `403` (`reason: role`). Tekshiruv `shared/go/authn` (Ed25519 public kalit + `bl:sid:*` blacklist).
 
 - Endpointlar (`services/matching-geo/openapi.yml`, `X-Internal-Token` = `INTERNAL_TOKENS`): `POST /internal/matching/location` (GEOADD, TTL 2 daqiqa),
-  `/find` (GEOSEARCH, default 50 km), `/route` (Mapbox Directions; zaxira — Haversine × 1.3; Pricing bilan bir xil `shared/geo`). `/find` dagi `pickup_eta_s` ham Mapbox'dan: nomzodlar parallel so'raladi, umumiy 4 s ichida ulgurmagani Haversine bo'yicha, `PUT /drivers/{id}/profile` va `/status`.
+  `/find` (GEOSEARCH, default 50 km), `/route` (Mapbox Directions; zaxira — Haversine × 1.3; Pricing bilan bir xil `shared/geo`). `/find` dagi `pickup_eta_s` ham Mapbox'dan: nomzodlar parallel so'raladi (har `/find` — nomzodlar soniga teng Directions so'rovi), umumiy 2 s ichida ulgurmagani Haversine bo'yicha, `PUT /drivers/{id}/profile` va `/status`.
 - Tinglaydi: `izgo.order.accepted.v1` (haydovchi → busy), `izgo.trip.completed.v1` (→ available). Chiqaradi: `izgo.offer.created.v1`
   (`/find` da `order_id` berilganda; `offer_id = UUIDv5(order_id, driver_id)`).
 - F-11: oldingi nuqtadan tezlik > 300 km/soat bo'lsa signal (WARN log, Redis stream `matching:gps-anomalies`, javobda `suspicious`).

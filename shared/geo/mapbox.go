@@ -22,7 +22,9 @@ const (
 	// MapboxBaseURL — real API manzili (testlarda httptest serveri bilan almashtiriladi).
 	MapboxBaseURL = "https://api.mapbox.com"
 	// MapboxTimeout — bitta so'rov uchun chegara; undan keyin chaqiruvchi Haversine'ga qaytadi (FallbackRouter).
-	MapboxTimeout = 3 * time.Second
+	// Trip & Order ichki chaqiruvni EXTERNAL_TIMEOUT (default 3 s) kutadi: Mapbox osilib qolsa ham Pricing va
+	// Matching&Geo shu muddat ichida Haversine natijasini qaytarishga ulgurishi kerak — shuning uchun 1.5 s.
+	MapboxTimeout = 1500 * time.Millisecond
 	// mapboxMaxBody — javob hajmi chegarasi (overview=false da javob ~1 KiB).
 	mapboxMaxBody = 1 << 20
 )

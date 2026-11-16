@@ -290,3 +290,30 @@ func TestNewRouterSelection(t *testing.T) {
 		}
 	}
 }
+
+// Mapbox osilib qolsa ham chaqiruvchi (Trip & Order, EXTERNAL_TIMEOUT default 3 s) javobni kutib ulguradi:
+// real klient timeouti bilan fallback 3 s dan ancha oldin qaytadi.
+func TestFallbackReturnsBeforeCallerTimeout(t *testing.T) {
+	const callerTimeout = 3 * time.Second
+	if MapboxTimeout >= callerTimeout-time.Second {
+		t.Fatalf("MapboxTimeout %v chaqiruvchi timeoutiga (%v) juda yaqin", MapboxTimeout, callerTimeout)
+	}
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	m, err := NewMapboxRouter(testToken, srv.URL, nil) // nil: ishlab chiqarishdagi kabi MapboxTimeout
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := NewFallbackRouter(m, haversine(t), time.Minute, nil)
+	start := time.Now()
+	rt, err := f.Route(context.Background(), tashkentA, tashkentB)
+	took := time.Since(start)
+	if err != nil || rt.DistanceM != 4615 {
+		t.Fatalf("fallback: %+v %v", rt, err)
+	}
+	if took > callerTimeout-500*time.Millisecond {
+		t.Errorf("fallback %v davom etdi: chaqiruvchi (%v) kutib ulgurmaydi", took, callerTimeout)
+	}
+}

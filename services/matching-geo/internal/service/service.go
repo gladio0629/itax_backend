@@ -27,13 +27,14 @@ type Options struct {
 	// ETAConcurrency — /find da bir vaqtda nechta marshrut so'rovi (Mapbox Directions) yuboriladi; 0 = 8.
 	ETAConcurrency int
 	// ETABudget — bitta /find dagi barcha ETA so'rovlari uchun umumiy vaqt; ulgurmagan nomzodlar ETA'si
-	// Haversine bo'yicha (geo.FallbackRouter) hisoblanadi; 0 = 4 s.
+	// Haversine bo'yicha (geo.FallbackRouter) hisoblanadi; 0 = 2 s. Chaqiruvchining (Trip & Order,
+	// EXTERNAL_TIMEOUT default 3 s) kutish vaqtidan kichik bo'lishi shart.
 	ETABudget time.Duration
 }
 
 const (
 	defaultETAConcurrency = 8
-	defaultETABudget      = 4 * time.Second
+	defaultETABudget      = 2 * time.Second
 )
 
 // OfferPublisher — offer.created ni yuboradi (NATS JetStream).
