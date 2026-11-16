@@ -72,3 +72,10 @@ and its `wss://` form to the CSP `connect-src` itself.
 - [ ] `docker compose --profile tls up -d`; `curl -I https://<API_DOMAIN>/api/v1/cities` → 200
 - [ ] Preflight check: `curl -i -X OPTIONS https://<API_DOMAIN>/api/v1/orders -H 'Origin: https://<client domain>' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type,idempotency-key'`
       returns `Access-Control-Allow-Origin: https://<client domain>`
+
+## Logs (rotation)
+
+Every container in `docker-compose.yml` uses `json-file` with `max-size: 10m`, `max-file: 5` (about 50 MB per
+container at most), so IZGO logs cannot fill the disk. To make the same limits the default for every container on the
+server, run once as root: `sudo ./scripts/install-docker-logrotate.sh` (merges `infra/docker/daemon.json` into
+`/etc/docker/daemon.json` with a backup, then restarts Docker).

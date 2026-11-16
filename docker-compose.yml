@@ -15,14 +15,24 @@ x-service-env: &service-env
   NATS_URL: tls://nats:4222
   NATS_CA_FILE: /run/secrets/mtls/ca.crt
 
+# Log rotation: har konteyner logi 10 MB x 5 fayl (eng ko'pi ~50 MB). Docker daemon darajasidagi standart —
+# infra/docker/daemon.json (scripts/install-docker-logrotate.sh); bu yerdagi sozlama daemon'ga bog'liq emas.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 x-service-defaults: &service-defaults
   restart: unless-stopped
   networks: [izgo]
+  logging: *default-logging
 
 services:
   # ---------------------------------------------------------------- infra
   postgres:
     image: postgres:16-alpine
+    logging: *default-logging
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER .env da berilishi kerak}
@@ -46,6 +56,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    logging: *default-logging
     restart: unless-stopped
     # F-25: ACL — har servis o'z foydalanuvchisi/paroli, faqat o'z kalitlari (infra/redis/acl.json); default faqat PING
     command: ["redis-server", "--appendonly", "yes", "--aclfile", "/etc/redis/users.acl"]
@@ -63,6 +74,7 @@ services:
 
   nats:
     image: nats:2.10-alpine
+    logging: *default-logging
     restart: unless-stopped
     command: ["-c", "/etc/nats/nats.conf", "-js"]
     ports:
@@ -82,6 +94,7 @@ services:
 
   kong:
     image: kong:3.7
+    logging: *default-logging
     restart: unless-stopped
     environment:
       KONG_DATABASE: "off"
@@ -487,6 +500,7 @@ services:
   # DNS: API_DOMAIN -> shu server; 80 va 443 portlari ochiq bo'lishi kerak. docs/hosting.md
   caddy:
     image: caddy:2.8.4-alpine
+    logging: *default-logging
     profiles: [tls]
     restart: unless-stopped
     networks:
