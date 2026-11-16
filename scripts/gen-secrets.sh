@@ -67,6 +67,8 @@ rm -f secrets/internal/SHARED_INTERNAL_TOKENS   # eski umumiy token (Etap 7 gach
 "$ROOT/scripts/gen-mtls-certs.sh"
 # --- NATS foydalanuvchilari va ruxsatlari (F-01; infra/nats/permissions.json)
 "$ROOT/scripts/gen-nats-auth.sh"
+# --- Redis ACL va parollar (F-25; infra/redis/acl.json)
+"$ROOT/scripts/gen-redis-acl.sh"
 
 # --- servisga xos sirlar
 from_env_or_rand secrets/svc/driver/UPLOAD_SIGNING_SECRET UPLOAD_SIGNING_SECRET 32

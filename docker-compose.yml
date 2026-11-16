@@ -9,7 +9,7 @@ name: izgo
 # /internal/* yo'llari Kong'da yo'q.
 
 x-service-env: &service-env
-  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  # F-25: REDIS_URL (redis://<servis>:<parol>@redis:6379/0) — Docker secret (scripts/gen-redis-acl.sh), env'da yo'q
   # F-01: NATS faqat TLS + har servisning o'z foydalanuvchisi (NATS_USER servis blokida, NATS_PASSWORD — Docker secret).
   # .env dagi NATS_URL bu yerda ishlatilmaydi: shifrlanmagan ulanishga qaytib bo'lmasin.
   NATS_URL: tls://nats:4222
@@ -47,11 +47,13 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    # F-25: ACL — har servis o'z foydalanuvchisi/paroli, faqat o'z kalitlari (infra/redis/acl.json); default faqat PING
+    command: ["redis-server", "--appendonly", "yes", "--aclfile", "/etc/redis/users.acl"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+      - ./secrets/redis/users.acl:/etc/redis/users.acl:ro
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -378,8 +380,8 @@ services:
       context: .
       dockerfile: services/pricing/Dockerfile
     environment:
-      # NATS hozircha ishlatilmaydi (hodisa chiqarmaydi/tinglamaydi), shuning uchun NATS_URL berilmaydi
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # NATS hozircha ishlatilmaydi (hodisa chiqarmaydi/tinglamaydi), shuning uchun NATS_URL berilmaydi.
+      # REDIS_URL — Docker secret (F-25, scripts/gen-redis-acl.sh)
       PORT: "8014"
       DB_HOST: postgres
       DB_USER: pricing_svc

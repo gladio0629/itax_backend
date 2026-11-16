@@ -1,0 +1,43 @@
+{
+  "$comment": "F-25: Redis ACL. Har servis o'z foydalanuvchisi va paroli bilan ulanadi; faqat o'z kalit prefikslariga o'qish/yozish, bl:sid:* (identity yozadi — logout/refresh reuse) hammaga FAQAT o'qish. Prefikslar kod va jonli MONITOR'dan olingan. Buyruqlar: +@all -@dangerous (KEYS, FLUSH*, CONFIG, DEBUG, MONITOR, ... yo'q). Pub/sub kanallari faqat ko'rsatilganlarga. scripts/gen-redis-acl.sh shundan secrets/redis/users.acl va secrets/svc/<servis>/REDIS_URL yasaydi. DB raqami hamma uchun 0: logout blacklist'ini barcha servislar bitta joydan o'qishi kerak.",
+  "users": {
+    "identity": {
+      "keys": ["adm:*", "otp:*", "rl:*", "sms:*", "bl:sid:*"],
+      "read_keys": [],
+      "channels": []
+    },
+    "trip-order": {
+      "keys": ["active:*", "order:accept-lock:*", "matching:mock:*"],
+      "read_keys": ["bl:sid:*"],
+      "channels": []
+    },
+    "matching-geo": {
+      "keys": ["driver:*", "drivers:*", "matching:*"],
+      "read_keys": ["bl:sid:*"],
+      "channels": []
+    },
+    "notification": {
+      "$comment": "order:<id>:passenger — faqat shu shakl (trip-order'ning order:accept-lock:* kalitlariga tegmasin)",
+      "keys": ["notif:*", "ws:*", "user:*", "device:*", "order:*:passenger"],
+      "read_keys": ["bl:sid:*"],
+      "channels": ["ws:user:*"]
+    },
+    "pricing": {
+      "keys": ["pricing:*"],
+      "read_keys": [],
+      "channels": []
+    },
+    "wallet": {
+      "keys": ["idem:*"],
+      "read_keys": ["bl:sid:*"],
+      "channels": []
+    },
+    "backoffice": {
+      "$comment": "faqat sessiya blacklist'ini o'qiydi; ioredis ready check INFO buyrug'ini yuboradi",
+      "keys": [],
+      "read_keys": ["bl:sid:*"],
+      "channels": [],
+      "extra_commands": ["+info"]
+    }
+  }
+}

@@ -26,6 +26,10 @@ docker compose ps             # 3. hammasi "healthy" bo'lishini kuting (birinchi
   wallet Spring `configtree`). Har servisning o'z DB paroli bor (F-25; `infra/postgres/sync-passwords.sh` mavjud volume'ni moslaydi),
   servislararo tokenlar har chaqiruvchiga alohida (F-02 bosqich 1, `infra/mtls/policy.json` → `scripts/gen-internal-tokens.sh`).
   `docker compose up` dan oldin kamida bir marta `./scripts/up.sh` (yoki `scripts/gen-secrets.sh`) ishga tushiring.
+- **NATS (F-01):** har servisning o'z foydalanuvchisi, faqat o'z mavzulariga publish, TLS majburiy (`infra/nats/permissions.json`).
+- **Redis (F-25):** ACL — har servis o'z foydalanuvchisi/paroli, faqat o'z kalit prefikslari; `bl:sid:*` hammaga faqat o'qish;
+  `default` faqat PING (`infra/redis/acl.json`). Ops: `docker compose exec redis redis-cli --user admin --askpass`
+  (parol `secrets/redis/ADMIN_PASSWORD`).
 - `.env` ga `UPLOAD_SIGNING_SECRET` va `INTERNAL_TOKENS` (tasodifiy, kamida 16 belgi).
 
 `docker compose up -d` ni to'g'ridan-to'g'ri ishlatsangiz, bularni o'zingiz bering: `INTERNAL_TOKENS` bo'sh bo'lsa
