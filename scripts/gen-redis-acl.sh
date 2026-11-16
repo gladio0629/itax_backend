@@ -6,7 +6,7 @@
 #   secrets/redis/ADMIN_PASSWORD          "admin" foydalanuvchisi (faqat ops: redis-cli --user admin)
 #   secrets/redis/users.acl               redis-server --aclfile; parollar SHA-256 xesh ko'rinishida; har safar qayta yoziladi
 #
-# "default" foydalanuvchi faqat PING (healthcheck) qila oladi, hech qanday kalitga kira olmaydi.
+# "default" o'chirilgan (parolsiz ulanish rad etiladi); healthcheck — "health" foydalanuvchi, faqat PING.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -35,7 +35,12 @@ def write_if_changed(path, data):
         print(f"gen-redis-acl: {path} yozildi", flush=True)
 # ACL faylida izoh qatori bo'lmaydi (redis rad etadi) — manba: infra/redis/acl.json
 lines = [
-    "user default on nopass resetkeys resetchannels -@all +ping",
+    # default: O'CHIRILGAN (off) — u bilan hech kim autentifikatsiya qila olmaydi (parolsiz ulanish NOAUTH). Huquqlari
+    # to'liq, chunki Redis AOF'ni qayta yuklashda MULTI/EXEC tranzaksiyalarini default huquqlari bilan tekshiradi —
+    # cheklansa, tranzaksiyada yozilgan ma'lumot (OTP, bildirishnomalar, ...) har qayta ishga tushishda yo'qoladi.
+    "user default off resetkeys resetchannels ~* &* +@all",
+    # healthcheck: faqat PING (parol ixtiyoriy — nopass)
+    "user health on nopass resetkeys resetchannels -@all +ping",
     f"user admin on {h(pw('secrets/redis/ADMIN_PASSWORD'))} ~* &* +@all",
 ]
 for name, u in cfg.items():

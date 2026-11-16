@@ -28,7 +28,7 @@ docker compose ps             # 3. hammasi "healthy" bo'lishini kuting (birinchi
   `docker compose up` dan oldin kamida bir marta `./scripts/up.sh` (yoki `scripts/gen-secrets.sh`) ishga tushiring.
 - **NATS (F-01):** har servisning o'z foydalanuvchisi, faqat o'z mavzulariga publish, TLS majburiy (`infra/nats/permissions.json`).
 - **Redis (F-25):** ACL — har servis o'z foydalanuvchisi/paroli, faqat o'z kalit prefikslari; `bl:sid:*` hammaga faqat o'qish;
-  `default` faqat PING (`infra/redis/acl.json`). Ops: `docker compose exec redis redis-cli --user admin --askpass`
+  `default` o'chirilgan, healthcheck — `health` (faqat PING) (`infra/redis/acl.json`). Ops: `docker compose exec redis redis-cli --user admin --askpass`
   (parol `secrets/redis/ADMIN_PASSWORD`).
 - **Sir fayllari huquqlari:** har fayl faqat o'z konteyneri uid'iga (`0440`, guruh — host foydalanuvchisi), host'gagina
   kerak bo'lganlari `0600` (`scripts/fix-secret-perms.sh`, `up.sh` chaqiradi). Postgres superuser parolini aylantirish:
