@@ -79,3 +79,23 @@ Every container in `docker-compose.yml` uses `json-file` with `max-size: 10m`, `
 container at most), so IZGO logs cannot fill the disk. To make the same limits the default for every container on the
 server, run once as root: `sudo ./scripts/install-docker-logrotate.sh` (merges `infra/docker/daemon.json` into
 `/etc/docker/daemon.json` with a backup, then restarts Docker).
+
+## Backup
+
+`./scripts/backup.sh` writes `backups/<UTC time>/`: every PostgreSQL database (`pg_dump -Fc`), roles (without
+passwords), `secrets/` and the driver document volume — all encrypted (AES-256 + PBKDF2) with the key in
+`~/.config/izgo/backup.key` (created on the first run). **Copy that key somewhere else** (password manager): without it a
+backup cannot be restored; stored next to the backups it protects nothing. Copy `backups/` off the server too.
+Old backups are deleted after `BACKUP_KEEP_DAYS` (14).
+
+Nightly: `15 3 * * * cd /opt/izgo && ./scripts/backup.sh >> backups/backup.log 2>&1`
+
+Prove a backup restores (does not touch the live database): `./scripts/restore-check.sh [backups/<time>]`.
+
+Restore after a disaster (on a new server):
+1. `dec() { openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:$HOME/.config/izgo/backup.key -in "$1"; }`
+2. `dec backups/<t>/secrets.tar.enc | tar -xf -` in the project directory, then `./scripts/fix-secret-perms.sh`.
+3. `docker compose up -d --wait postgres` (the init script creates the databases and users from `secrets/`), then for
+   each database: `dec backups/<t>/<db>.dump.enc | docker compose exec -T postgres pg_restore -U <POSTGRES_USER> -d <db> --clean --if-exists`.
+4. Driver documents: `dec backups/<t>/driver_uploads.tar.enc | docker run --rm -i -v izgo_driver_uploads:/v alpine tar -C /v -xf -`.
+5. `./scripts/up.sh`.
