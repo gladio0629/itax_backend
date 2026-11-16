@@ -16,11 +16,19 @@ mkdir -p secrets/internal secrets/svc
 python3 - <<'PY'
 import json, os, secrets
 pol = json.load(open("infra/mtls/policy.json"))["services"]
+def atomic_write(path, data):
+    """0440 (konteyner egasi) faylni ustidan yozib bo'lmaydi — vaqtinchalik fayl + rename (papka guruhga yoziladi)."""
+    tmp = path + ".tmp"
+    old = os.umask(0o077)  # fix-secret-perms.sh gacha ham faqat egasi o'qisin
+    try:
+        with open(tmp, "w") as f: f.write(data)
+    finally:
+        os.umask(old)
+    os.replace(tmp, path)
 def tok(s):
     p = f"secrets/internal/{s}.token"
     if not os.path.exists(p):
-        with open(p, "w") as f: f.write(secrets.token_hex(32))
-        os.chmod(p, 0o644)
+        atomic_write(p, secrets.token_hex(32))
         print(f"gen-internal-tokens: {p} yaratildi", flush=True)
     return open(p).read().strip()
 for s in pol:
@@ -30,11 +38,10 @@ for s in pol:
 for s, v in pol.items():
     vals = [tok(s)] + [tok(c) for c in v["callers"]]
     d = f"secrets/svc/{s}"
-    os.makedirs(d, exist_ok=True); os.chmod(d, 0o755)
+    os.makedirs(d, exist_ok=True)
     p = f"{d}/INTERNAL_TOKENS"
     new = ",".join(vals)
     if not os.path.exists(p) or open(p).read() != new:
-        with open(p, "w") as f: f.write(new)
-        os.chmod(p, 0o644)
+        atomic_write(p, new)
         print(f"gen-internal-tokens: {p} <- o'zi + {v['callers'] or 'chaqiruvchi yo`q'}", flush=True)
 PY

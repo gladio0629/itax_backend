@@ -18,6 +18,8 @@ fi
 # F-16: maxfiy qiymatlar .env da emas, secrets/ ostidagi fayllarda (Docker secrets). Yetishmaganlarini yaratadi,
 # .env da qolgan eski qiymatlarni fayllarga ko'chirib, .env da bo'shatadi (zaxira bilan).
 "$ROOT/scripts/gen-secrets.sh"
+# Sir fayllari faqat o'z konteyneri foydalanuvchisiga o'qiladi (0440, egasi — konteyner uid)
+"$ROOT/scripts/fix-secret-perms.sh"
 
 # compose POSTGRES_USER ni majburiy talab qiladi. .env ga yozilmaydi: bo'sh bo'lsa faqat shu ishga tushirish uchun izgo.
 if ! grep -Eq '^POSTGRES_USER=.+' .env && [[ -z "${POSTGRES_USER:-}" ]]; then

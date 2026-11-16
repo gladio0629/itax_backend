@@ -8,8 +8,8 @@
 #
 # Idempotent: mavjud fayl qayta yozilmaydi (aylantirish uchun faylni o'chiring va qayta ishga tushiring).
 # .env dagi qiymat fayl yo'q bo'lganda bir marta ko'chiriladi, keyin .env da bo'shatiladi (zaxira: secrets/.env.bak-<vaqt>).
-# Qiymatlar ekranga chiqarilmaydi. Fayllar 0644: konteyner foydalanuvchilari (nonroot, node, postgres) o'qiy olishi kerak;
-# secrets/ .gitignore da. Production'da secrets/ ni faqat deploy foydalanuvchisi o'qiy oladigan joyda saqlang.
+# Qiymatlar ekranga chiqarilmaydi. Egasi/huquqlari (faqat o'z konteyneri o'qiydi) — scripts/fix-secret-perms.sh
+# (up.sh chaqiradi). secrets/ .gitignore da.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -30,14 +30,13 @@ put() {
   [[ -n $v ]] || return 0
   mkdir -p "$(dirname "$f")"
   printf '%s' "$v" > "$f"
-  chmod 0644 "$f"
+  chmod 0600 "$f"   # yakuniy egasi/huquqi — scripts/fix-secret-perms.sh
   echo "gen-secrets: $f yaratildi" >&2
 }
 # from_env_or_rand FILE ENVNAME [bytes] — .env dagi qiymat, bo'lmasa tasodifiy
 from_env_or_rand() { local v; v=$(envval "$2"); put "$1" "${v:-$(rand "${3:-32}")}"; }
 
 mkdir -p secrets/postgres secrets/svc secrets/external
-chmod 0755 secrets secrets/postgres secrets/svc secrets/external
 
 # --- postgres superuser: qiymati O'ZGARMASLIGI kerak (mavjud pg_data volume shu parol bilan yaratilgan)
 if [[ ! -e secrets/postgres/POSTGRES_PASSWORD ]]; then
@@ -56,7 +55,8 @@ for k in "${!DBSVC[@]}"; do
   # servis nusxasi har doim asl fayldan (aylantirishda eskirib qolmasin); keyin up.sh -> sync-passwords.sh
   src="secrets/postgres/${k}_DB_PASSWORD" dst="secrets/svc/${DBSVC[$k]}/DB_PASSWORD"
   if [[ ! -e $dst ]] || ! cmp -s "$src" "$dst"; then
-    mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"; chmod 0644 "$dst"; echo "gen-secrets: $dst yangilandi" >&2
+    # atomar almashtirish: mavjud fayl 0440 (konteyner egasi) — ustidan yozib bo'lmaydi, papka esa guruhga yoziladi
+    mkdir -p "$(dirname "$dst")"; cp "$src" "$dst.tmp" && mv -f "$dst.tmp" "$dst"; echo "gen-secrets: $dst yangilandi" >&2
   fi
 done
 
@@ -77,7 +77,6 @@ put secrets/svc/identity/EMAIL_API_KEY "$(envval EMAIL_API_KEY)"
 
 # --- tashqi kalitlar (hozircha hech bir servis o'qimaydi — real provayder ulanganda servis papkasiga ko'chiriladi)
 for k in HAMKORBANK_MERCHANT_KEY HAMKORBANK_MERCHANT_SECRET MAPBOX_TOKEN; do put "secrets/external/$k" "$(envval "$k")"; done
-find secrets/svc secrets/internal -type d -exec chmod 0755 {} +
 
 # --- .env dan maxfiy qiymatlarni olib tashlash (fayl allaqachon bor bo'lsa)
 MOVED=(POSTGRES_PASSWORD IDENTITY_DB_PASSWORD DRIVER_DB_PASSWORD TRIP_ORDER_DB_PASSWORD PRICING_DB_PASSWORD WALLET_DB_PASSWORD

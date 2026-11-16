@@ -13,16 +13,25 @@ cd "$ROOT"
 python3 - <<'PY'
 import hashlib, json, os, secrets
 cfg = json.load(open("infra/redis/acl.json"))["users"]
+def atomic_write(path, data):
+    """0440 (konteyner egasi) faylni ustidan yozib bo'lmaydi — vaqtinchalik fayl + rename (papka guruhga yoziladi)."""
+    tmp = path + ".tmp"
+    old = os.umask(0o077)  # fix-secret-perms.sh gacha ham faqat egasi o'qisin
+    try:
+        with open(tmp, "w") as f: f.write(data)
+    finally:
+        os.umask(old)
+    os.replace(tmp, path)
 os.makedirs("secrets/redis", exist_ok=True)
 def pw(path):
     if not os.path.exists(path):
-        with open(path, "w") as f: f.write(secrets.token_hex(24))
+        atomic_write(path, secrets.token_hex(24))
         print(f"gen-redis-acl: {path} yaratildi", flush=True)
     return open(path).read().strip()
 def h(p): return "#" + hashlib.sha256(p.encode()).hexdigest()
 def write_if_changed(path, data):
     if not os.path.exists(path) or open(path).read() != data:
-        with open(path, "w") as f: f.write(data)
+        atomic_write(path, data)
         print(f"gen-redis-acl: {path} yozildi", flush=True)
 # ACL faylida izoh qatori bo'lmaydi (redis rad etadi) — manba: infra/redis/acl.json
 lines = [

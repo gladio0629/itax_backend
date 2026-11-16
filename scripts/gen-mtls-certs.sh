@@ -5,7 +5,7 @@
 #   secrets/mtls/<servis>/{tls.crt,tls.key,ca.crt}  CN=<servis>, SAN=DNS:<servis>; server+client auth; 825 kun
 #
 # Servislar ro'yxati — infra/mtls/policy.json, qo'shimcha nats va redis (server TLS). Idempotent: mavjud sertifikat qayta yaratilmaydi.
-# Hozircha (bosqich 1) servislar sertifikatni ISHLATMAYDI — /run/secrets/mtls ga faqat ulangan.
+# tls.key egasi/huquqi — scripts/fix-secret-perms.sh. Hozircha (bosqich 1) servislar sertifikatni ISHLATMAYDI — /run/secrets/mtls ga faqat ulangan.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -28,6 +28,6 @@ for s in $(python3 -c 'import json;print(" ".join(json.load(open("infra/mtls/pol
     -extfile <(printf 'subjectAltName=DNS:%s\nextendedKeyUsage=serverAuth,clientAuth\nkeyUsage=critical,digitalSignature\nbasicConstraints=CA:FALSE\n' "$s") \
     -out "$sd/tls.crt" 2>/dev/null
   rm -f "$sd/tls.csr"; cp "$D/ca.crt" "$sd/ca.crt"
-  chmod 0644 "$sd/tls.crt" "$sd/ca.crt" "$sd/tls.key"   # konteyner foydalanuvchisi (nonroot) o'qishi uchun
+  chmod 0644 "$sd/tls.crt" "$sd/ca.crt"; chmod 0600 "$sd/tls.key"   # egasi — scripts/fix-secret-perms.sh
   echo "gen-mtls-certs: $s sertifikati yaratildi" >&2
 done
