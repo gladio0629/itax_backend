@@ -4,7 +4,8 @@
 #   secrets/postgres/POSTGRES_PASSWORD            postgres superuser (POSTGRES_PASSWORD_FILE)
 #   secrets/postgres/<DB>_PASSWORD                har servis DB foydalanuvchisi (init-databases.sh, sync-passwords.sh)
 #   secrets/svc/<servis>/<NOM>                    servis konteyneriga /run/secrets/izgo ga ulanadi (fayl nomi = env nomi)
-#   secrets/external/<NOM>                        hali hech bir servis o'qimaydigan tashqi kalitlar (Hamkorbank, Mapbox)
+#   secrets/external/<NOM>                        tashqi kalitlarning asl nusxasi (Hamkorbank — hali ishlatilmaydi;
+#                                                 MAPBOX_TOKEN — pricing va matching-geo papkalariga nusxalanadi)
 #
 # Idempotent: mavjud fayl qayta yozilmaydi (aylantirish uchun faylni o'chiring va qayta ishga tushiring).
 # .env dagi qiymat fayl yo'q bo'lganda bir marta ko'chiriladi, keyin .env da bo'shatiladi (zaxira: secrets/.env.bak-<vaqt>).
@@ -75,8 +76,22 @@ from_env_or_rand secrets/svc/driver/UPLOAD_SIGNING_SECRET UPLOAD_SIGNING_SECRET 
 for s in identity notification; do put "secrets/svc/$s/SMS_PROVIDER_KEY" "$(envval SMS_PROVIDER_KEY)"; done
 put secrets/svc/identity/EMAIL_API_KEY "$(envval EMAIL_API_KEY)"
 
-# --- tashqi kalitlar (hozircha hech bir servis o'qimaydi — real provayder ulanganda servis papkasiga ko'chiriladi)
+# --- tashqi kalitlar: asl nusxa secrets/external/ da (Hamkorbank — real provayder ulanganda servis papkasiga ko'chiriladi)
 for k in HAMKORBANK_MERCHANT_KEY HAMKORBANK_MERCHANT_SECRET MAPBOX_TOKEN; do put "secrets/external/$k" "$(envval "$k")"; done
+
+# --- Mapbox Directions (pricing, matching-geo): servis nusxasi har doim asl fayldan (aylantirishda eskirib qolmasin).
+# Token yo'q bo'lsa nusxa ham yo'q — servislar Haversine bo'yicha ishlaydi.
+for s in pricing matching-geo; do
+  src=secrets/external/MAPBOX_TOKEN dst="secrets/svc/$s/MAPBOX_TOKEN"
+  if [[ -s $src ]]; then
+    if [[ ! -e $dst ]] || ! cmp -s "$src" "$dst"; then
+      # atomar almashtirish (DB parollari kabi): mavjud fayl 0440 — ustidan yozib bo'lmaydi, papka esa guruhga yoziladi
+      mkdir -p "$(dirname "$dst")"; cp "$src" "$dst.tmp" && mv -f "$dst.tmp" "$dst"; echo "gen-secrets: $dst yangilandi" >&2
+    fi
+  elif [[ -e $dst ]]; then
+    rm -f "$dst"; echo "gen-secrets: $dst olib tashlandi (secrets/external/MAPBOX_TOKEN yo'q)" >&2
+  fi
+done
 
 # --- .env dan maxfiy qiymatlarni olib tashlash (fayl allaqachon bor bo'lsa)
 MOVED=(POSTGRES_PASSWORD IDENTITY_DB_PASSWORD DRIVER_DB_PASSWORD TRIP_ORDER_DB_PASSWORD PRICING_DB_PASSWORD WALLET_DB_PASSWORD

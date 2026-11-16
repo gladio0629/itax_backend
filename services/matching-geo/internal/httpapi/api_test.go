@@ -86,13 +86,19 @@ const (
 // newEnv — opts: store/service sozlamalarini o'zgartirish (masalan, F-11 StationaryAfter).
 func newEnv(t *testing.T, opts ...func(*store.Options, *service.Options)) *env {
 	t.Helper()
+	router, _ := geo.NewHaversineRouter(1.3, 30)
+	return newEnvWithRouter(t, router, opts...)
+}
+
+// newEnvWithRouter — marshrut manbai bilan (Mapbox testlari: mock HTTP server).
+func newEnvWithRouter(t *testing.T, router geo.Router, opts ...func(*store.Options, *service.Options)) *env {
+	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
 	clk := &clock{t: time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)}
 	logs := &logBuf{}
 	log := slog.New(slog.NewTextHandler(logs, nil))
-	router, _ := geo.NewHaversineRouter(1.3, 30)
 	pub := &capturePub{}
 	stOpt := store.Options{LocationTTL: 2 * time.Minute, BusyTTL: 24 * time.Hour}
 	svcOpt := service.Options{

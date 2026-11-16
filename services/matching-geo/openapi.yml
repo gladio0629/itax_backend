@@ -65,8 +65,10 @@ paths:
         '422': { $ref: '#/components/responses/Error' }
   /internal/matching/route:
     post:
-      summary: Ikki nuqta orasidagi marshrut (hozir mock)
-      description: Haversine × 1.3 (Pricing bilan bir xil, `shared/geo`); davomiylik — 30 km/soat. Keyinroq Mapbox Directions.
+      summary: Ikki nuqta orasidagi marshrut
+      description: >-
+        Mapbox Directions (`driving`): real yo'l masofasi va davomiyligi. `MAPBOX_MODE=mock`, token yo'q yoki Mapbox javob
+        bermasa — Haversine × 1.3, davomiylik 30 km/soat. Pricing bilan bir xil manba (`shared/geo`).
       operationId: matchingRoute
       requestBody:
         required: true
@@ -235,6 +237,6 @@ components:
         driver_id: { type: string, format: uuid }
         distance_m: { type: integer, description: Haydovchidan `from` nuqtagacha (to'g'ri chiziq) }
         location: { $ref: '#/components/schemas/GeoPoint' }
-        pickup_eta_s: { type: integer, description: "Taxminiy yetib borish vaqti (marshrut mock'i bo'yicha)" }
+        pickup_eta_s: { type: integer, description: "Haydovchidan yo'lovchigacha yetib borish vaqti, soniyada: Mapbox Directions; u o'chirilgan yoki javob bermasa — Haversine × 1.3, 30 km/soat" }
         offer_id: { type: string, format: uuid }
         offer_expires_at: { type: string, format: date-time }

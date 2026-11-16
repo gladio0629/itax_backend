@@ -90,12 +90,13 @@ Qiymatlar `.env` da (repoga kirmaydi); `.env.example` da faqat nomlar. Bo'sh qol
 | `PRICING_URL`, `MATCHING_URL`, `WALLET_URL` | trip-order | default `http://pricing:8014`, `http://matching-geo:8013`, `http://wallet:8015` — mock'lar real HTTP ga almashtirilganda |
 | `IDENTITY_INTERNAL_URL` | backoffice | default `http://identity:8010` (xodim yaratish) |
 | `UPLOAD_SIGNING_SECRET`, `PUBLIC_BASE_URL`, `AUTO_APPROVE_*`, `APPROVAL_SYSTEM_ACTOR_ID` | driver | hujjat yuklash imzosi (`up.sh` yozadi), demo avto-tasdiq |
-| `TARIFF_CACHE_TTL`, `ROAD_FACTOR`, `AVG_SPEED_KMH` | pricing (oxirgi ikkisi matching-geo ham) | tarif keshi, masofa/vaqt mock formulasi |
+| `TARIFF_CACHE_TTL`, `ROAD_FACTOR`, `AVG_SPEED_KMH` | pricing (oxirgi ikkisi matching-geo ham) | tarif keshi; Mapbox'siz (zaxira) masofa/vaqt formulasi |
+| `MAPBOX_TOKEN`, `MAPBOX_MODE` | pricing, matching-geo | Mapbox Directions: real yo'l masofasi va davomiyligi. `MAPBOX_MODE` = `real` \| `mock`; bo'sh = token bo'lsa real. Token — Docker secret (`secrets/external/MAPBOX_TOKEN` → `secrets/svc/{pricing,matching-geo}/`). Mapbox javob bermasa servis Haversine'ga qaytadi |
 | `LOCATION_TTL`, `MAX_SPEED_KMH`, `DEFAULT_RADIUS_M` | matching-geo | GPS TTL, F-11 tezlik chegarasi, qidiruv radiusi |
 | `PAYMENT_MODE`, `COMMISSION_BPS` | wallet | `mock`; komissiya (1000 = 10%) |
 | `INTERNAL_LOOKUP_MODE`, `INTERNAL_HTTP_TIMEOUT_MS`, `TZ_OFFSET_HOURS`, `PUBLISH_APPROVED_ON_RESOLVED` | backoffice | |
 | `MOCK_LOG_SMS_PARAMS`, `WS_MAX_CONNS` | notification | |
-| `SMS_PROVIDER_*`, `PAYME_*`, `CLICK_*`, `HAMKORBANK_*`, `MAPBOX_TOKEN`, `FCM_KEY` | — | real provayderlar uchun (hozir ishlatilmaydi) |
+| `SMS_PROVIDER_*`, `PAYME_*`, `CLICK_*`, `HAMKORBANK_*`, `FCM_KEY` | — | real provayderlar uchun (hozir ishlatilmaydi) |
 
 ## Papka strukturasi
 
@@ -124,7 +125,7 @@ onlyback/
 - Formula **[OCHIQ]** (hujjatda tasdiqlanmagan), shuning uchun hammasi `pricing_db.tariffs` da: `base_fare`, `per_km_rate`, `seat_multiplier`,
   `car_class_multipliers`, `vehicle_multipliers`, `fuel_surcharge` (+ `min_fare`, `rounding_step`, `commission_bps`). Boshlang'ich qiymatlar —
   `migrations/0002_default_tariff.up.sql` (taklif). Pricing tarifni faqat o'qiydi; yangisini Backoffice yozadi (yangi `version`, `active = true`).
-- Tarif Redis'da 5 daqiqa keshlanadi (`TARIFF_CACHE_TTL`); Redis ishlamasa bazadan o'qiladi. Masofa = Haversine × `ROAD_FACTOR` (1.3), davomiylik = masofa / `AVG_SPEED_KMH` (30).
+- Tarif Redis'da 5 daqiqa keshlanadi (`TARIFF_CACHE_TTL`); Redis ishlamasa bazadan o'qiladi. Masofa va davomiylik — Mapbox Directions (`routes[0].distance` / `duration`, `driving` profili); `MAPBOX_MODE=mock`, token yo'q yoki Mapbox javob bermasa (3 s timeout; xatodan keyin 30 s tanaffus) — Haversine × `ROAD_FACTOR` (1.3), davomiylik = masofa / `AVG_SPEED_KMH` (30). Manba `shared/geo` da, Matching & Geo bilan bir xil.
 - Trip & Order `PRICING_URL` berilganda (compose'da default) shu servisni chaqiradi; javobdagi `lines` (narx tarkibi, yig'indisi = narx)
   `POST /api/v1/orders/quote` va buyurtmada qaytadi. `PRICING_URL` bo'sh bo'lsa — ichki mock.
 
@@ -134,7 +135,7 @@ onlyback/
   yo'lovchi tokeni → `403` (`reason: role`). Tekshiruv `shared/go/authn` (Ed25519 public kalit + `bl:sid:*` blacklist).
 
 - Endpointlar (`services/matching-geo/openapi.yml`, `X-Internal-Token` = `INTERNAL_TOKENS`): `POST /internal/matching/location` (GEOADD, TTL 2 daqiqa),
-  `/find` (GEOSEARCH, default 50 km), `/route` (mock: Haversine × 1.3 — Pricing bilan bir xil `shared/geo`), `PUT /drivers/{id}/profile` va `/status`.
+  `/find` (GEOSEARCH, default 50 km), `/route` (Mapbox Directions; zaxira — Haversine × 1.3; Pricing bilan bir xil `shared/geo`). `/find` dagi `pickup_eta_s` ham Mapbox'dan: nomzodlar parallel so'raladi, umumiy 4 s ichida ulgurmagani Haversine bo'yicha, `PUT /drivers/{id}/profile` va `/status`.
 - Tinglaydi: `izgo.order.accepted.v1` (haydovchi → busy), `izgo.trip.completed.v1` (→ available). Chiqaradi: `izgo.offer.created.v1`
   (`/find` da `order_id` berilganda; `offer_id = UUIDv5(order_id, driver_id)`).
 - F-11: oldingi nuqtadan tezlik > 300 km/soat bo'lsa signal (WARN log, Redis stream `matching:gps-anomalies`, javobda `suspicious`).

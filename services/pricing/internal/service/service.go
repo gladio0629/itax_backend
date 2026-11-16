@@ -1,4 +1,4 @@
-// Package service — narx hisoblash: tarif (kesh/DB) + marshrut (Haversine) + formula.
+// Package service — narx hisoblash: tarif (kesh/DB) + marshrut (Mapbox Directions yoki Haversine, shared/geo) + formula.
 package service
 
 import (

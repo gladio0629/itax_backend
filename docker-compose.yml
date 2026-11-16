@@ -295,6 +295,10 @@ services:
       LOCATION_TTL: ${LOCATION_TTL:-2m}
       MAX_SPEED_KMH: ${MAX_SPEED_KMH:-300}
       DEFAULT_RADIUS_M: ${DEFAULT_RADIUS_M:-50000}
+      # Marshrut: MAPBOX_MODE=real (yoki bo'sh) va token bo'lsa Mapbox Directions; mock, token yo'q yoki Mapbox
+      # javob bermasa — Haversine × ROAD_FACTOR (shared/geo). Tashqi so'rov: https://api.mapbox.com (chiquvchi HTTPS kerak).
+      MAPBOX_MODE: ${MAPBOX_MODE:-}
+      # MAPBOX_TOKEN: Docker secret — secrets/svc/matching-geo/MAPBOX_TOKEN -> /run/secrets/izgo/MAPBOX_TOKEN (scripts/gen-secrets.sh)
       ROAD_FACTOR: ${ROAD_FACTOR:-1.3}
       AVG_SPEED_KMH: ${AVG_SPEED_KMH:-30}
       # Public POST /api/v1/location/update (Kong orqali): haydovchi access tokeni Identity public kaliti bilan tekshiriladi
@@ -413,6 +417,10 @@ services:
       # Bo'sh bo'lsa faqat pricing ishga tushmaydi (config tekshiruvi); butun compose to'xtamasligi uchun ":?" ishlatilmaydi.
       # INTERNAL_TOKENS: Docker secret — secrets/svc/pricing/INTERNAL_TOKENS -> /run/secrets/izgo/INTERNAL_TOKENS (scripts/gen-secrets.sh)
       TARIFF_CACHE_TTL: ${TARIFF_CACHE_TTL:-5m}
+      # Marshrut: MAPBOX_MODE=real (yoki bo'sh) va token bo'lsa Mapbox Directions; mock, token yo'q yoki Mapbox
+      # javob bermasa — Haversine × ROAD_FACTOR (shared/geo). Tashqi so'rov: https://api.mapbox.com (chiquvchi HTTPS kerak).
+      MAPBOX_MODE: ${MAPBOX_MODE:-}
+      # MAPBOX_TOKEN: Docker secret — secrets/svc/pricing/MAPBOX_TOKEN -> /run/secrets/izgo/MAPBOX_TOKEN (scripts/gen-secrets.sh)
       ROAD_FACTOR: ${ROAD_FACTOR:-1.3}
       AVG_SPEED_KMH: ${AVG_SPEED_KMH:-30}
     volumes:

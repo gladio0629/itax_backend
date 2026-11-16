@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izgo/shared/geo"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -42,7 +43,11 @@ type Config struct {
 	// order_id berilgan so'rovda taklif muddati (expires_at berilmasa).
 	OfferTTL time.Duration `envconfig:"OFFER_TTL" default:"2m"`
 
-	// Marshrut (mock): masofa = Haversine × RoadFactor — Pricing bilan bir xil (shared/geo).
+	// Marshrut va ETA — Pricing bilan bir xil manba (shared/geo): MAPBOX_MODE "real" (yoki bo'sh) va MAPBOX_TOKEN
+	// bo'lsa Mapbox Directions (real yo'l); MAPBOX_MODE=mock, token yo'q yoki Mapbox javob bermasa —
+	// Haversine × RoadFactor, davomiylik = masofa / AvgSpeedKMH.
+	MapboxMode  string  `envconfig:"MAPBOX_MODE"`
+	MapboxToken string  `envconfig:"MAPBOX_TOKEN"`
 	RoadFactor  float64 `envconfig:"ROAD_FACTOR" default:"1.3"`
 	AvgSpeedKMH float64 `envconfig:"AVG_SPEED_KMH" default:"30"`
 }
@@ -87,6 +92,9 @@ func (c Config) validate() error {
 	}
 	if c.DefaultRadiusM <= 0 || c.MaxRadiusM < c.DefaultRadiusM {
 		errs = append(errs, errors.New("DEFAULT_RADIUS_M musbat va MAX_RADIUS_M dan oshmasligi kerak"))
+	}
+	if !geo.ValidMode(c.MapboxMode) {
+		errs = append(errs, errors.New("MAPBOX_MODE faqat mock yoki real bo'lishi mumkin"))
 	}
 	if c.MaxCandidates < 1 || c.MaxCandidates > 5000 {
 		errs = append(errs, errors.New("MAX_CANDIDATES 1..5000 oralig'ida bo'lishi kerak"))

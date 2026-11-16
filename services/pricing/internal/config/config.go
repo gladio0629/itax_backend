@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/izgo/shared/geo"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -28,7 +29,11 @@ type Config struct {
 
 	TariffCacheTTL time.Duration `envconfig:"TARIFF_CACHE_TTL" default:"5m"`
 
-	// Mapbox kelguncha: masofa = Haversine × RoadFactor, davomiylik = masofa / AvgSpeedKMH.
+	// Marshrut: MAPBOX_MODE "real" (yoki bo'sh) va MAPBOX_TOKEN bo'lsa — Mapbox Directions (real yo'l masofasi).
+	// MAPBOX_MODE=mock, token yo'q yoki Mapbox javob bermasa: masofa = Haversine × RoadFactor,
+	// davomiylik = masofa / AvgSpeedKMH (shared/geo).
+	MapboxMode  string  `envconfig:"MAPBOX_MODE"`
+	MapboxToken string  `envconfig:"MAPBOX_TOKEN"`
 	RoadFactor  float64 `envconfig:"ROAD_FACTOR" default:"1.3"`
 	AvgSpeedKMH float64 `envconfig:"AVG_SPEED_KMH" default:"30"`
 }
@@ -62,6 +67,9 @@ func (c Config) validate() error {
 	}
 	if c.TariffCacheTTL <= 0 {
 		errs = append(errs, errors.New("TARIFF_CACHE_TTL musbat bo'lishi kerak"))
+	}
+	if !geo.ValidMode(c.MapboxMode) {
+		errs = append(errs, errors.New("MAPBOX_MODE faqat mock yoki real bo'lishi mumkin"))
 	}
 	return errors.Join(errs...)
 }

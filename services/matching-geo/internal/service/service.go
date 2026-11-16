@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +24,17 @@ type Options struct {
 	MaxRadiusM      float64
 	MaxCandidates   int
 	OfferTTL        time.Duration
+	// ETAConcurrency — /find da bir vaqtda nechta marshrut so'rovi (Mapbox Directions) yuboriladi; 0 = 8.
+	ETAConcurrency int
+	// ETABudget — bitta /find dagi barcha ETA so'rovlari uchun umumiy vaqt; ulgurmagan nomzodlar ETA'si
+	// Haversine bo'yicha (geo.FallbackRouter) hisoblanadi; 0 = 4 s.
+	ETABudget time.Duration
 }
+
+const (
+	defaultETAConcurrency = 8
+	defaultETABudget      = 4 * time.Second
+)
 
 // OfferPublisher — offer.created ni yuboradi (NATS JetStream).
 type OfferPublisher interface {
@@ -162,19 +173,20 @@ func (s *Service) Find(ctx context.Context, r FindRequest) ([]Match, error) {
 		return nil, err
 	}
 
+	etas, err := s.pickupETAs(ctx, cands, r.From)
+	if err != nil {
+		return nil, fmt.Errorf("service: marshrut: %w", err)
+	}
+
 	now := s.now()
 	expires := now.Add(s.opt.OfferTTL)
 	if r.ExpiresAt != nil {
 		expires = *r.ExpiresAt
 	}
 	out := make([]Match, 0, len(cands))
-	for _, c := range cands {
+	for i, c := range cands {
 		pt := geo.Point{Lat: c.Lat, Lng: c.Lng}
-		rt, err := s.router.Route(ctx, pt, r.From)
-		if err != nil {
-			return nil, fmt.Errorf("service: marshrut: %w", err)
-		}
-		m := Match{DriverID: c.DriverID, DistanceM: int(math.Round(c.DistanceM)), Location: pt, PickupETAs: rt.DurationS}
+		m := Match{DriverID: c.DriverID, DistanceM: int(math.Round(c.DistanceM)), Location: pt, PickupETAs: etas[i]}
 		if r.OrderID != nil {
 			id := OfferID(*r.OrderID, c.DriverID)
 			exp := expires.UTC()
@@ -187,6 +199,52 @@ func (s *Service) Find(ctx context.Context, r FindRequest) ([]Match, error) {
 		s.publishOffers(ctx, *r.OrderID, out, r.TraceID)
 	}
 	return out, nil
+}
+
+// pickupETAs — har bir nomzoddan yo'lovchigacha yetib kelish vaqti (soniya), cands tartibida.
+// Mapbox Directions tashqi so'rov bo'lgani uchun nomzodlar parallel (ETAConcurrency) va umumiy ETABudget ichida
+// hisoblanadi: Mapbox sekin yoki nosoz bo'lsa /find baribir javob beradi — o'sha nomzodlar ETA'si Haversine bo'yicha.
+func (s *Service) pickupETAs(ctx context.Context, cands []store.Candidate, to geo.Point) ([]int, error) {
+	etas := make([]int, len(cands))
+	if len(cands) == 0 {
+		return etas, nil
+	}
+	workers, budget := s.opt.ETAConcurrency, s.opt.ETABudget
+	if workers <= 0 {
+		workers = defaultETAConcurrency
+	}
+	if budget <= 0 {
+		budget = defaultETABudget
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+		sem      = make(chan struct{}, workers)
+	)
+	for i, c := range cands {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, from geo.Point) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			rt, err := s.router.Route(ctx, from, to)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				return
+			}
+			etas[i] = rt.DurationS
+		}(i, geo.Point{Lat: c.Lat, Lng: c.Lng})
+	}
+	wg.Wait()
+	return etas, firstErr
 }
 
 // publishOffers — offer.created hodisalari. NATS ishlamasa qidiruv natijasi baribir qaytadi (Trip & Order takliflarni
@@ -204,10 +262,10 @@ func (s *Service) publishOffers(ctx context.Context, order uuid.UUID, ms []Match
 	}
 }
 
-// ---------------------------------------------------------------- marshrut (mock)
+// ---------------------------------------------------------------- marshrut
 
-// Route — ikki nuqta orasidagi marshrut. Hozir shared/geo.HaversineRouter (Pricing bilan bir xil formula);
-// keyinroq Mapbox Directions (tayyor kod: shared/geo/geo.go oxiridagi izoh).
+// Route — ikki nuqta orasidagi marshrut: Mapbox Directions (yoqilgan bo'lsa), aks holda yoki u javob bermasa
+// Haversine × RoadFactor — Pricing bilan bir xil manba (shared/geo.NewRouter).
 func (s *Service) Route(ctx context.Context, from, to geo.Point) (geo.Route, error) {
 	return s.router.Route(ctx, from, to)
 }

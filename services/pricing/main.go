@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,9 +70,21 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	router, err := geo.NewHaversineRouter(cfg.RoadFactor, cfg.AvgSpeedKMH)
+	// Marshrut: Mapbox Directions (token bo'lsa); u javob bermasa Haversine'ga qaytadi. Token logga yozilmaydi.
+	router, mapbox, err := geo.NewRouter(geo.Config{
+		RoadFactor: cfg.RoadFactor, AvgSpeedKMH: cfg.AvgSpeedKMH, MapboxMode: cfg.MapboxMode, MapboxToken: cfg.MapboxToken,
+		OnFallback: func(err error) { log.Warn("mapbox javob bermadi: Haversine ishlatildi", "err", err) },
+	})
 	if err != nil {
 		return err
+	}
+	switch {
+	case mapbox:
+		log.Info("marshrut manbai: Mapbox Directions (zaxira: Haversine)")
+	case strings.EqualFold(strings.TrimSpace(cfg.MapboxMode), geo.ModeReal):
+		log.Warn("MAPBOX_MODE=real, lekin MAPBOX_TOKEN bo'sh: marshrut Haversine bo'yicha hisoblanadi")
+	default:
+		log.Info("marshrut manbai: Haversine")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
