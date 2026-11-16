@@ -252,7 +252,21 @@ type Actor struct {
 	IsDriver bool
 }
 
-// GetOrder (F-10): buyurtmani faqat egasi (yo'lovchi) yoki unga biriktirilgan haydovchi ko'radi; boshqalarga 404.
+// foreign (F-10) — egalik bilan cheklangan so'rov ErrNotFound berganda: resurs umuman yo'q bo'lsa notFound (404),
+// bor-u lekin boshqaniki bo'lsa 403 FORBIDDEN (reason: not_owner). Mutatsiyalarda egalik SQL'da qoladi — bu faqat
+// javob kodini aniqlash uchun.
+func (s *Service) foreign(ctx context.Context, t store.Owned, id uuid.UUID, notFound error) error {
+	ok, err := s.st.Exists(ctx, t, id)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return apperr.NotOwner()
+	}
+	return notFound
+}
+
+// GetOrder (F-10): buyurtmani faqat egasi (yo'lovchi) yoki unga biriktirilgan haydovchi ko'radi; boshqalarga 403.
 func (s *Service) GetOrder(ctx context.Context, a Actor, id uuid.UUID) (domain.Order, error) {
 	o, err := s.st.GetOrder(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) {
@@ -264,7 +278,7 @@ func (s *Service) GetOrder(ctx context.Context, a Actor, id uuid.UUID) (domain.O
 	owner := !a.IsDriver && o.PassengerID == a.ID
 	assigned := a.IsDriver && o.DriverID != nil && *o.DriverID == a.ID
 	if !owner && !assigned {
-		return domain.Order{}, apperr.OrderNotFound(id.String())
+		return domain.Order{}, apperr.NotOwner()
 	}
 	return o, nil
 }
@@ -342,11 +356,14 @@ type UpdateInput struct {
 func (s *Service) UpdateOrder(ctx context.Context, passenger, id uuid.UUID, in UpdateInput) (domain.Order, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		cur, err := s.st.GetOrder(ctx, id)
-		if errors.Is(err, domain.ErrNotFound) || (err == nil && cur.PassengerID != passenger) {
+		if errors.Is(err, domain.ErrNotFound) {
 			return domain.Order{}, apperr.OrderNotFound(id.String())
 		}
 		if err != nil {
 			return domain.Order{}, err
+		}
+		if cur.PassengerID != passenger {
+			return domain.Order{}, apperr.NotOwner()
 		}
 		if cur.Status != domain.Searching {
 			return domain.Order{}, forbiddenForOrderStatus(cur.Status)
@@ -432,7 +449,7 @@ func (s *Service) CancelOrder(ctx context.Context, passenger, id uuid.UUID, reas
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return domain.Order{}, apperr.OrderNotFound(id.String())
+		return domain.Order{}, s.foreign(ctx, store.OwnedOrder, id, apperr.OrderNotFound(id.String()))
 	case errors.As(err, &se):
 		return domain.Order{}, forbiddenForOrderStatus(se.Order)
 	case err != nil:
@@ -466,7 +483,7 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 func (s *Service) AcceptOffer(ctx context.Context, driver, offerID uuid.UUID, trace string) (domain.Trip, error) {
 	view, err := s.st.GetOffer(ctx, offerID, driver)
 	if errors.Is(err, domain.ErrNotFound) {
-		return domain.Trip{}, apperr.OrderNotFound(offerID.String())
+		return domain.Trip{}, s.foreign(ctx, store.OwnedOffer, offerID, apperr.OrderNotFound(offerID.String()))
 	}
 	if err != nil {
 		return domain.Trip{}, err
@@ -564,7 +581,7 @@ func (s *Service) StartTrip(ctx context.Context, driver, tripID uuid.UUID, trace
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return domain.Trip{}, apperr.OrderNotFound(tripID.String())
+		return domain.Trip{}, s.foreign(ctx, store.OwnedTrip, tripID, apperr.OrderNotFound(tripID.String()))
 	case errors.As(err, &se):
 		return domain.Trip{}, forbiddenForTripStatus(se.Trip)
 	case err != nil:
@@ -577,7 +594,7 @@ func (s *Service) StartTrip(ctx context.Context, driver, tripID uuid.UUID, trace
 func (s *Service) CompleteTrip(ctx context.Context, driver, tripID uuid.UUID, trace string) (domain.Trip, error) {
 	trip, order, err := s.st.GetTripWithOrder(ctx, tripID, driver)
 	if errors.Is(err, domain.ErrNotFound) {
-		return domain.Trip{}, apperr.OrderNotFound(tripID.String())
+		return domain.Trip{}, s.foreign(ctx, store.OwnedTrip, tripID, apperr.OrderNotFound(tripID.String()))
 	}
 	if err != nil {
 		return domain.Trip{}, err
@@ -622,10 +639,16 @@ type RatingInput struct {
 
 func (s *Service) ownedOrder(ctx context.Context, passenger, id uuid.UUID) (domain.Order, error) {
 	o, err := s.st.GetOrder(ctx, id)
-	if errors.Is(err, domain.ErrNotFound) || (err == nil && o.PassengerID != passenger) {
+	if errors.Is(err, domain.ErrNotFound) {
 		return domain.Order{}, apperr.OrderNotFound(id.String())
 	}
-	return o, err
+	if err != nil {
+		return domain.Order{}, err
+	}
+	if o.PassengerID != passenger {
+		return domain.Order{}, apperr.NotOwner()
+	}
+	return o, nil
 }
 
 func (s *Service) Rate(ctx context.Context, passenger, orderID uuid.UUID, in RatingInput) (domain.Rating, error) {

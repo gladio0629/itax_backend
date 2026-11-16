@@ -35,6 +35,9 @@ func Forbidden(reason string, extra map[string]any) *Error {
 	return New(http.StatusForbidden, "FORBIDDEN", p)
 }
 
+// NotOwner — F-10: resurs bor, lekin so'rovchiniki emas (boshqa yo'lovchi buyurtmasi, boshqa haydovchi safari).
+func NotOwner() *Error { return Forbidden("not_owner", nil) }
+
 func NotFound() *Error { return New(http.StatusNotFound, "NOT_FOUND", nil) }
 
 func OrderNotFound(id string) *Error {

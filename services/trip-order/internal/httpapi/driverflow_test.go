@@ -40,7 +40,7 @@ func TestArriveStartComplete(t *testing.T) {
 	if again := d.do("POST", "/api/v1/trips/"+tid+"/arrive", nil); again.Status != 200 {
 		t.Fatalf("takroriy arrive: %d %s", again.Status, again.Raw)
 	}
-	if r := e.driver().do("POST", "/api/v1/trips/"+tid+"/arrive", nil); r.Status != 404 {
+	if r := e.driver().do("POST", "/api/v1/trips/"+tid+"/arrive", nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Fatalf("begona haydovchi arrive: %d", r.Status)
 	}
 	st := d.do("POST", "/api/v1/trips/"+tid+"/start", nil)
@@ -95,7 +95,7 @@ func TestRejectOffer(t *testing.T) {
 	if r := d.do("POST", "/api/v1/trips/offers/"+of+"/reject", map[string]any{"reason": "x"}); r.Status != 422 {
 		t.Fatalf("noto'g'ri sabab: %d", r.Status)
 	}
-	if r := e.driver().do("POST", "/api/v1/trips/offers/"+of+"/reject", nil); r.Status != 404 {
+	if r := e.driver().do("POST", "/api/v1/trips/offers/"+of+"/reject", nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Fatalf("begona reject: %d", r.Status)
 	}
 }

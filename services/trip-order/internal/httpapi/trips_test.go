@@ -37,7 +37,7 @@ func TestOffersListIsolation(t *testing.T) {
 	if r := outsider.do("GET", "/api/v1/trips/offers", nil); len(r.Body["data"].([]any)) != 0 {
 		t.Errorf("begona haydovchi taklif ko'rdi: %s", r.Raw)
 	}
-	if r := outsider.do("POST", acceptPath(of["id"].(string)), nil); r.Status != 404 {
+	if r := outsider.do("POST", acceptPath(of["id"].(string)), nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Errorf("begona haydovchi qabul qila oldi: %d", r.Status)
 	}
 	for _, q := range []string{"?limit=0", "?cursor=!!"} {
@@ -360,7 +360,7 @@ func TestTripLifecycleAndEvent(t *testing.T) {
 	}
 	// F-10: begona haydovchi safarni ko'rmaydi
 	for _, act := range []string{"start", "complete"} {
-		if r := other.do("POST", "/api/v1/trips/"+tid+"/"+act, nil); r.Status != 404 {
+		if r := other.do("POST", "/api/v1/trips/"+tid+"/"+act, nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 			t.Errorf("begona %s: %d", act, r.Status)
 		}
 		if r := p.do("POST", "/api/v1/trips/"+tid+"/"+act, nil); r.Status != 403 {
@@ -475,7 +475,7 @@ func TestRating(t *testing.T) {
 		t.Errorf("PUT baho yo'q: %d %s", r.Status, r.Raw)
 	}
 	// egasi emas / haydovchi
-	if r := other.do("POST", rate, map[string]any{"stars": 4}); r.Status != 404 {
+	if r := other.do("POST", rate, map[string]any{"stars": 4}); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Errorf("begona: %d", r.Status)
 	}
 	if r := d.do("POST", rate, map[string]any{"stars": 4}); r.Status != 403 {

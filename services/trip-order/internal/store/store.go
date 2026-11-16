@@ -809,3 +809,30 @@ func (s *Store) PurgeOutbox(ctx context.Context, now time.Time) (int64, error) {
 	}
 	return tag.RowsAffected(), nil
 }
+
+// ---------------------------------------------------------------- F-10: egalik tekshiruvi yordamchilari
+
+// Owned — egalik bilan cheklangan so'rov ErrNotFound bergach, resurs umuman bormi (403 / 404 ni ajratish uchun).
+// Jadval nomi faqat shu paketdagi konstantalardan keladi (foydalanuvchi kiritmaydi).
+type Owned string
+
+const (
+	OwnedOrder      Owned = "orders"
+	OwnedTrip       Owned = "trips"
+	OwnedOffer      Owned = "offers"
+	OwnedSavedPlace Owned = "saved_places"
+)
+
+// Exists — id bo'yicha yozuv bormi (egasidan qat'i nazar).
+func (s *Store) Exists(ctx context.Context, t Owned, id uuid.UUID) (bool, error) {
+	switch t {
+	case OwnedOrder, OwnedTrip, OwnedOffer, OwnedSavedPlace:
+	default:
+		return false, fmt.Errorf("store: noma'lum jadval: %q", t)
+	}
+	var ok bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM `+string(t)+` WHERE id = $1)`, id).Scan(&ok); err != nil {
+		return false, fmt.Errorf("store: exists %s: %w", t, err)
+	}
+	return ok, nil
+}

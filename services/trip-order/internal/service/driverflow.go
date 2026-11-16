@@ -22,7 +22,7 @@ func (s *Service) RejectOffer(ctx context.Context, driver, offerID uuid.UUID, re
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return apperr.OrderNotFound(offerID.String())
+		return s.foreign(ctx, store.OwnedOffer, offerID, apperr.OrderNotFound(offerID.String()))
 	case errors.As(err, &se):
 		return apperr.Forbidden("offer_closed", nil)
 	}
@@ -36,7 +36,7 @@ func (s *Service) ArriveTrip(ctx context.Context, driver, tripID uuid.UUID, trac
 	var se *domain.StateError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return domain.Trip{}, apperr.OrderNotFound(tripID.String())
+		return domain.Trip{}, s.foreign(ctx, store.OwnedTrip, tripID, apperr.OrderNotFound(tripID.String()))
 	case errors.As(err, &se):
 		return domain.Trip{}, forbiddenForTripStatus(se.Trip)
 	case err != nil:
@@ -56,7 +56,7 @@ var DriverCancelReasons = map[string]bool{"passenger_no_show": true, "passenger_
 func (s *Service) CancelTrip(ctx context.Context, driver, tripID uuid.UUID, reason string, comment *string, trace string) (domain.Trip, error) {
 	trip, order, err := s.st.GetTripWithOrder(ctx, tripID, driver)
 	if errors.Is(err, domain.ErrNotFound) {
-		return domain.Trip{}, apperr.OrderNotFound(tripID.String())
+		return domain.Trip{}, s.foreign(ctx, store.OwnedTrip, tripID, apperr.OrderNotFound(tripID.String()))
 	}
 	if err != nil {
 		return domain.Trip{}, err

@@ -241,7 +241,7 @@ func TestSavedPlaces(t *testing.T) {
 	if l := other.do("GET", "/api/v1/places/saved", nil); len(l.Body["data"].([]any)) != 0 {
 		t.Fatalf("begona ro'yxat: %s", l.Raw)
 	}
-	if r := other.do("DELETE", "/api/v1/places/saved/"+c.str("id"), nil); r.Status != 404 {
+	if r := other.do("DELETE", "/api/v1/places/saved/"+c.str("id"), nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Fatalf("begona o'chirish: %d", r.Status)
 	}
 	if r := p.do("DELETE", "/api/v1/places/saved/"+c.str("id"), nil); r.Status != 204 {

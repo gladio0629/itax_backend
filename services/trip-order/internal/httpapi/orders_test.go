@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,7 +192,7 @@ func TestGetOrderOwnership(t *testing.T) {
 		t.Fatalf("egasi: %d %s", r.Status, r.Raw)
 	}
 	for name, u := range map[string]user{"boshqa yo'lovchi": p2, "taklif olgan, lekin biriktirilmagan haydovchi": d1, "begona haydovchi": d2} {
-		if r := u.do("GET", "/api/v1/orders/"+id, nil); r.Status != 404 || r.errKey() != "ORDER_NOT_FOUND" {
+		if r := u.do("GET", "/api/v1/orders/"+id, nil); r.Status != 403 || r.errKey() != "FORBIDDEN" || r.errParam("reason") != "not_owner" {
 			t.Errorf("%s: %d %s", name, r.Status, r.Raw)
 		}
 	}
@@ -202,13 +203,17 @@ func TestGetOrderOwnership(t *testing.T) {
 	if r := d1.do("GET", "/api/v1/orders/"+id, nil); r.Status != 200 || r.obj("driver")["id"] != d1.ID.String() {
 		t.Errorf("biriktirilgan haydovchi: %d %s", r.Status, r.Raw)
 	}
-	if r := d2.do("GET", "/api/v1/orders/"+id, nil); r.Status != 404 {
+	if r := d2.do("GET", "/api/v1/orders/"+id, nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Errorf("begona haydovchi: %d", r.Status)
 	}
-	for _, bad := range []string{"not-a-uuid", uuid.NewString()} {
-		if r := p1.do("GET", "/api/v1/orders/"+bad, nil); r.Status != 404 || r.errKey() != "ORDER_NOT_FOUND" {
+	// F-10: noto'g'ri UUID formati — 422, mavjud bo'lmagan — 404
+	for _, bad := range []string{"not-a-uuid", "123", strings.ReplaceAll(uuid.NewString(), "-", ""), "{" + uuid.NewString() + "}"} {
+		if r := p1.do("GET", "/api/v1/orders/"+bad, nil); r.Status != 422 || r.errKey() != "VALIDATION_ERROR" {
 			t.Errorf("%s: %d %s", bad, r.Status, r.Raw)
 		}
+	}
+	if r := p1.do("GET", "/api/v1/orders/"+uuid.NewString(), nil); r.Status != 404 || r.errKey() != "ORDER_NOT_FOUND" {
+		t.Errorf("yo'q buyurtma: %d %s", r.Status, r.Raw)
 	}
 }
 
@@ -250,7 +255,7 @@ func TestPatchOrder(t *testing.T) {
 			t.Errorf("%s: %d %s", name, r.Status, r.Raw)
 		}
 	}
-	if r := other.do("PATCH", path, map[string]any{"seats": 1}); r.Status != 404 {
+	if r := other.do("PATCH", path, map[string]any{"seats": 1}); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Errorf("begona buyurtma: %d", r.Status)
 	}
 
@@ -283,7 +288,7 @@ func TestCancelOrder(t *testing.T) {
 	id := o.str("id")
 	offer := d.offerFor(t, id)
 
-	if r := other.do("POST", "/api/v1/orders/"+id+"/cancel", nil); r.Status != 404 {
+	if r := other.do("POST", "/api/v1/orders/"+id+"/cancel", nil); r.Status != 403 || r.errParam("reason") != "not_owner" {
 		t.Fatalf("begona: %d", r.Status)
 	}
 	r := p.do("POST", "/api/v1/orders/"+id+"/cancel", map[string]any{"reason": "changed_plans", "comment": "kerak emas"})

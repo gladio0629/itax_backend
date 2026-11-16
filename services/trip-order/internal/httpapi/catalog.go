@@ -259,9 +259,9 @@ func (s *Server) savedCreate(w http.ResponseWriter, r *http.Request, id *authn.I
 }
 
 func (s *Server) savedDelete(w http.ResponseWriter, r *http.Request, id *authn.Identity) error {
-	pid, err := uuid.Parse(r.PathValue("id"))
+	pid, err := pathID(r)
 	if err != nil {
-		return apperr.NotFound()
+		return err
 	}
 	if err := s.svc.DeleteSavedPlace(r.Context(), id.UserID, pid); err != nil {
 		return err

@@ -130,12 +130,13 @@ func (s *Server) Handler() http.Handler {
 	return s.recoverer(s.withRequestID(s.accessLog(mux)))
 }
 
-// pathID — yo'ldagi {id}. Noto'g'ri UUID ham "topilmadi" (shartnomada bu endpointlarda 422 yo'q).
+// pathID — yo'ldagi {id}. Noto'g'ri UUID formati — 422 VALIDATION_ERROR (fields.id = invalid_format), F-10.
+// Faqat kanonik 36 belgili ko'rinish qabul qilinadi (uuid.Parse urn:/{}/32-hex variantlarini ham o'tkazadi).
 func pathID(r *http.Request) (uuid.UUID, error) {
 	raw := r.PathValue("id")
 	id, err := uuid.Parse(raw)
-	if err != nil {
-		return uuid.Nil, apperr.OrderNotFound(raw)
+	if err != nil || len(raw) != 36 {
+		return uuid.Nil, apperr.Validation(map[string]string{"id": "invalid_format"})
 	}
 	return id, nil
 }

@@ -155,6 +155,10 @@
           "service": "pricing, identity",
           "description": "/internal/* — X-Internal-Token yo'q yoki noto'g'ri (faqat ichki servislar chaqiradi)."
         },
+        "not_owner": {
+          "service": "trip-order",
+          "description": "F-10: resurs mavjud, lekin so'rovchiniki emas (boshqa yo'lovchining buyurtmasi, boshqa haydovchining safari/taklifi, boshqaning saqlangan manzili)."
+        },
         "role": {
           "service": "trip-order",
           "description": "Token roli endpointga mos emas (masalan yo'lovchi haydovchi endpointini chaqirdi)."

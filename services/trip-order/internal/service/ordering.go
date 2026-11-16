@@ -17,6 +17,7 @@ import (
 	"github.com/izgo/trip-order/internal/apperr"
 	"github.com/izgo/trip-order/internal/domain"
 	"github.com/izgo/trip-order/internal/external"
+	"github.com/izgo/trip-order/internal/store"
 )
 
 // ---------------------------------------------------------------- vaqt (aniq yoki oraliq)
@@ -359,7 +360,7 @@ func (s *Service) SavePlace(ctx context.Context, p domain.SavedPlace) (domain.Sa
 
 func (s *Service) DeleteSavedPlace(ctx context.Context, user, id uuid.UUID) error {
 	if err := s.st.DeleteSavedPlace(ctx, user, id); errors.Is(err, domain.ErrNotFound) {
-		return apperr.NotFound()
+		return s.foreign(ctx, store.OwnedSavedPlace, id, apperr.NotFound())
 	} else if err != nil {
 		return err
 	}

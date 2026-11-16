@@ -690,6 +690,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
   /api/v1/routes/popular:
@@ -758,7 +759,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Order' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
     patch:
       tags: [Orders]
@@ -806,6 +809,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
   # ================================================================== RATINGS
@@ -911,6 +915,7 @@ paths:
         '402': { $ref: '#/components/responses/WalletLimitReached' }
         '403': { $ref: '#/components/responses/DriverBlocked' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '409': { $ref: '#/components/responses/OrderAlreadyTaken' }
         default: { $ref: '#/components/responses/InternalError' }
 
@@ -976,6 +981,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
   /api/v1/trips/{id}/cancel:
@@ -1022,6 +1028,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
   /api/v1/trips/{id}/complete:
@@ -1041,6 +1048,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/OrderNotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         default: { $ref: '#/components/responses/InternalError' }
 
   # =================================================================== WALLET
@@ -2306,6 +2314,9 @@ components:
       name: id
       in: path
       required: true
+      description: |
+        Resurs UUID si (F-10). Noto'g'ri format — `422 VALIDATION_ERROR` (`fields.id: invalid_format`);
+        mavjud emas — `404`; boshqa foydalanuvchiniki — `403 FORBIDDEN` (`reason: not_owner`).
       schema: { type: string, format: uuid }
     Cursor:
       name: cursor
@@ -2350,7 +2361,7 @@ components:
           example: { error: { key: AUTH_OTP_RATE_LIMITED, params: { retry_after: 42 } } }
     Forbidden:
       description: |
-        FORBIDDEN. `params.reason` — sabab (masalan `trip_started`, `driver_assigned`,
+        FORBIDDEN. `params.reason` — sabab (masalan `not_owner`, `trip_started`, `driver_assigned`,
         `active_orders_limit`, `already_rated`, `order_not_completed`).
         To'liq ro'yxat — `shared/errors/errors.json` → `codes.FORBIDDEN.reasons`.
       content:
