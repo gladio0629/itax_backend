@@ -91,6 +91,14 @@ services:
       # POST /config butun gateway'ni almashtiradi). Kerak bo'lsa (image'da curl yo'q):
       #   docker compose exec kong resty -e 'ngx.say(require("resty.http").new():request_uri("http://127.0.0.1:8001/status").body)'
       KONG_ADMIN_LISTEN: 127.0.0.1:8001
+      # F-03: mijoz IP si — faqat Caddy (qat'iy IP, pastda) yuborgan X-Forwarded-For ga ishoniladi. 8000 ga to'g'ridan-to'g'ri
+      # kelgan so'rov sarlavhani soxtalashtirib IP limitini aylanib o'ta olmaydi.
+      KONG_TRUSTED_IPS: 172.20.255.254
+      KONG_REAL_IP_HEADER: X-Forwarded-For
+      KONG_REAL_IP_RECURSIVE: "on"
+      # Servis qayta yaratilsa (yangi IP) Kong eski IP ni uzoq keshlamasin (aks holda 502)
+      KONG_DNS_VALID_TTL: "5"
+      KONG_DNS_STALE_TTL: "0"
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
@@ -481,7 +489,10 @@ services:
     image: caddy:2.8.4-alpine
     profiles: [tls]
     restart: unless-stopped
-    networks: [izgo]
+    networks:
+      izgo:
+        # Kong faqat shu manzildan kelgan X-Forwarded-For ga ishonadi (KONG_TRUSTED_IPS)
+        ipv4_address: 172.20.255.254
     environment:
       # bo'sh bo'lsa Caddy ishga tushmaydi (faqat --profile tls bilan kerak)
       API_DOMAIN: ${API_DOMAIN:-}
@@ -496,6 +507,11 @@ services:
 networks:
   izgo:
     name: izgo
+    ipam:
+      config:
+        # Dinamik manzillar faqat pastki yarmidan (ip_range); 172.20.255.254 — Caddy uchun band
+        - subnet: 172.20.0.0/16
+          ip_range: 172.20.0.0/17
 
 volumes:
   pg_data:

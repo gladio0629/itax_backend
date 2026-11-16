@@ -9,22 +9,59 @@ _format_version: "3.0"
 _transform: true
 
 services:
+  # Har servis: ulanish 5 s, o'qish/yozish 30 s (F-20). Route darajasidagi plaginlar global plaginlardan ustun.
   # ------------------------------------------------------------- public API
   - name: identity
     url: http://identity:8010
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: auth
         paths: ["/api/v1/auth"]
         strip_path: false
+      # F-03: OTP so'rovi — IP boshiga 5/daqiqa, 30/soat. Telefon boshiga 5/soat (+1 soat blok) — identity'ning o'zida
+      # (Kong OSS so'rov tanasidagi telefon bo'yicha cheklay olmaydi).
+      - name: otp-request
+        paths: ["/api/v1/auth/otp/request"]
+        strip_path: false
+        plugins:
+        - name: rate-limiting
+          config:
+            minute: 5
+            hour: 30
+            limit_by: ip
+            policy: local
+      - name: otp-verify
+        paths: ["/api/v1/auth/otp/verify"]
+        strip_path: false
+        plugins:
+        - name: rate-limiting
+          config:
+            minute: 10
+            hour: 100
+            limit_by: ip
+            policy: local
       - name: profile
         paths: ["/api/v1/profile"]
         strip_path: false
+      # F-08: admin kirishi — alohida, qattiqroq limit
       - name: admin-auth
         paths: ["/admin/v1/auth"]
         strip_path: false
+        plugins:
+        - name: rate-limiting
+          config:
+            minute: 10
+            hour: 60
+            limit_by: ip
+            policy: local
 
   - name: trip-order
     url: http://trip-order:8012
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: orders
         paths: ["/api/v1/orders"]
@@ -48,24 +85,51 @@ services:
 
   - name: notification
     url: http://notification:8016
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: notifications
         paths: ["/api/v1/notifications"]
         strip_path: false
-      # WebSocket (/ws?token=JWT): token servisning o'zida tekshiriladi. /internal/* bu yerda ATAYLAB yo'q.
+
+  # WebSocket alohida servis: uzoq yashaydigan ulanish (server 25 s da ping yuboradi), 30 s timeout uni uzmasin.
+  # Token servisning o'zida tekshiriladi. /internal/* bu yerda ATAYLAB yo'q.
+  - name: notification-ws
+    url: http://notification:8016
+    connect_timeout: 5000
+    read_timeout: 3600000
+    write_timeout: 3600000
+    routes:
       - name: notifications-ws
         paths: ["/ws"]
         strip_path: false
 
   - name: driver
     url: http://driver:8011
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: drivers
         paths: ["/api/v1/drivers"]
         strip_path: false
+      # F-03: hujjat rasmlari (upload-url + PUT .../content) — 10 MB gacha; qolgan hamma joyda 1 MB
+      - name: driver-documents
+        paths: ["/api/v1/drivers/documents"]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 10
+              size_unit: megabytes
+              require_content_length: false
 
   - name: matching-geo
     url: http://matching-geo:8013
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: location
         paths: ["/api/v1/location"]
@@ -75,6 +139,9 @@ services:
 
   - name: wallet
     url: http://wallet:8015
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: wallet
         paths: ["/api/v1/wallet"]
@@ -83,10 +150,20 @@ services:
   # -------------------------------------------------------------- admin API
   - name: backoffice
     url: http://backoffice:8017
+    connect_timeout: 5000
+    read_timeout: 30000   # F-20: 30 s
+    write_timeout: 30000
     routes:
       - name: admin
         paths: ["/admin/v1"]
         strip_path: false
+        plugins:
+        - name: rate-limiting
+          config:
+            minute: 120
+            hour: 3000
+            limit_by: ip
+            policy: local
 
 plugins:
   # CORS — faqat 3 ta frontend domeni (client, driver, admin). Domenlar ma'lum bo'lgach shu ro'yxatni to'ldiring
@@ -114,3 +191,15 @@ plugins:
       header_name: X-Request-ID
       generator: uuid
       echo_downstream: true
+  # F-03: umumiy cheklovlar (route'da o'z sozlamasi bo'lmasa). IP — Kong ko'rgan mijoz IP si (Caddy ortida
+  # X-Forwarded-For dan, faqat Caddy'ning qat'iy IP sidan kelganda: docker-compose.yml KONG_TRUSTED_IPS).
+  - name: rate-limiting
+    config:
+      minute: 100
+      limit_by: ip
+      policy: local
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1
+      size_unit: megabytes
+      require_content_length: false
