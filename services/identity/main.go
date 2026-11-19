@@ -71,6 +71,13 @@ func run(log *slog.Logger) error {
 			"app_env", cfg.AppEnv, "test_phones", len(dev.Phones), "test_emails", len(dev.Emails))
 	}
 
+	review := cfg.ReviewOTP()
+	if review.Enabled() {
+		// Kod va telefonlar logga yozilmaydi — faqat soni. Bu qator yo'q bo'lsa: fayllar mount qilinmagan yoki bo'sh.
+		log.Info("review akkaunt yoqilgan: ro'yxatdagi telefonlar uchun OTP belgilangan kod, SMS yuborilmaydi",
+			"review_phones", len(review.Phones))
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -118,7 +125,7 @@ func run(log *slog.Logger) error {
 		AccessTTL: cfg.AccessTTL, RefreshTTL: cfg.RefreshTTL, AdminTTL: cfg.AdminTTL,
 		OTPTTL: cfg.OTPTTL, OTPResend: cfg.OTPResend, LimitWindow: cfg.OTPLimitWindow,
 		OTPMaxAttempts: cfg.OTPMaxAttempts, PhoneLimit: cfg.OTPPhoneLimit, IPLimit: cfg.OTPIPLimit,
-		Dev: dev,
+		Dev: dev, Review: review,
 	}, repo, cache.NewOTP(rdb), cache.NewBlacklist(rdb), tokens, notifier, log)
 	svc.OnEvent(relay.Kick)
 

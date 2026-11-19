@@ -26,6 +26,29 @@ type Options struct {
 	PhoneLimit, IPLimit             int
 	// Dev — faqat DEV_MODE=true bo'lganda to'ldiriladi (config.DevOTP). Nol qiymat — o'chirilgan.
 	Dev DevOTP
+	// Review — do'kon (App Store / Google Play) tekshiruvchisi akkaunti (config.ReviewOTP). Nol qiymat — o'chirilgan.
+	Review ReviewOTP
+}
+
+// ReviewOTP — production'da ham ishlaydigan doimiy OTP, faqat ro'yxatdagi telefonlar uchun va faqat
+// yo'lovchi/haydovchi kirishida (RequestOTP). Admin (backoffice) oqimlariga TA'SIR QILMAYDI — u yerda
+// codeForPhone/codeForEmail ishlatiladi. Bu telefonlarga SMS yuborilmaydi (tekshiruvchida SIM yo'q,
+// soxta raqamga real SMS xato qaytarardi). Rate limit, urinishlar, TTL va cooldown o'zgarmaydi.
+type ReviewOTP struct {
+	Code   string              // bo'sh — o'chirilgan
+	Phones map[string]struct{} // E.164 (+998...)
+}
+
+// Enabled — review OTP yoqilganmi.
+func (r ReviewOTP) Enabled() bool { return r.Code != "" && len(r.Phones) > 0 }
+
+// isReviewPhone — telefon review ro'yxatidami.
+func (s *Service) isReviewPhone(phone string) bool {
+	if r := s.opt.Review; r.Enabled() {
+		_, ok := r.Phones[phone]
+		return ok
+	}
+	return false
 }
 
 // DevOTP — dev/test uchun belgilangan OTP: ro'yxatdagi telefon/email'ga tasodifiy kod o'rniga Code saqlanadi.
@@ -104,20 +127,35 @@ func (s *Service) RequestOTP(ctx context.Context, phone, ip string) (OTPResult, 
 		return OTPResult{}, err
 	}
 
-	code, err := s.codeForPhone(phone)
-	if err != nil {
+	review := s.isReviewPhone(phone)
+	var code string
+	var err error
+	if review {
+		code = s.opt.Review.Code
+	} else if code, err = s.codeForPhone(phone); err != nil {
 		return OTPResult{}, err
 	}
 	if err := s.otp.Put(ctx, otpKey(phone), code, s.opt.OTPTTL); err != nil {
 		return OTPResult{}, err
 	}
-	if err := s.notify.SendSMS(ctx, phone, code); err != nil {
+	if review {
+		// SMS yuborilmaydi; kod logga yozilmaydi.
+		s.log.Info("review akkaunt: OTP belgilangan kod, SMS yuborilmadi", "phone_suffix", phoneSuffix(phone))
+	} else if err := s.notify.SendSMS(ctx, phone, code); err != nil {
 		return OTPResult{}, fmt.Errorf("auth: sms: %w", err)
 	}
 	if err := s.otp.StartCooldown(ctx, coolKey, s.opt.OTPResend); err != nil {
 		return OTPResult{}, err
 	}
 	return OTPResult{ExpiresIn: int(s.opt.OTPTTL.Seconds()), ResendAfter: int(s.opt.OTPResend.Seconds()), CodeLength: otpDigits}, nil
+}
+
+// phoneSuffix — logda to'liq raqam o'rniga oxirgi 4 raqam.
+func phoneSuffix(phone string) string {
+	if len(phone) <= 4 {
+		return phone
+	}
+	return "…" + phone[len(phone)-4:]
 }
 
 func (s *Service) consume(ctx context.Context, key string, limit int) error {

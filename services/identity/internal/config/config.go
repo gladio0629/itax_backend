@@ -4,6 +4,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -74,6 +76,15 @@ type Config struct {
 	DevOTPCode    string   `envconfig:"DEV_OTP_CODE"`
 	DevTestPhones []string `envconfig:"DEV_TEST_PHONES"`
 	DevTestEmails []string `envconfig:"DEV_TEST_EMAILS"`
+
+	// Review (App Store / Google Play tekshiruvchisi): production'da ham ishlaydi, DEV_MODE ga bog'liq emas.
+	// Qiymatlar env'da emas, FAYLDA (up.sh -> scripts/gen-secrets.sh .env dan secrets/svc/identity/ ga yozadi).
+	// Ikkala fayl yo'q — o'chirilgan; bittasi bor, o'qib bo'lmaydi yoki format noto'g'ri — servis ishga tushmaydi.
+	ReviewOTPCodeFile string `envconfig:"REVIEW_OTP_CODE_FILE"`
+	ReviewPhonesFile  string `envconfig:"REVIEW_PHONES_FILE"`
+	// Fayllardan o'qilgan qiymatlar (Load to'ldiradi).
+	ReviewOTPCode string   `ignored:"true"`
+	ReviewPhones  []string `ignored:"true"`
 }
 
 var (
@@ -85,6 +96,9 @@ var (
 func Load() (Config, error) {
 	var c Config
 	if err := envconfig.Process("", &c); err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
+	if err := c.loadReview(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	if err := c.validate(); err != nil {
@@ -130,6 +144,7 @@ func (c Config) validate() error {
 	if c.DevMode {
 		errs = append(errs, c.validateDev()...)
 	}
+	errs = append(errs, c.validateReview()...)
 	if (c.AdminBootstrapEmail == "") != (c.AdminBootstrapPhone == "") {
 		errs = append(errs, errors.New("ADMIN_BOOTSTRAP_EMAIL va ADMIN_BOOTSTRAP_PHONE birga berilishi kerak"))
 	}
@@ -195,6 +210,70 @@ func (c Config) DevOTP() auth.DevOTP {
 		d.Emails[auth.NormalizeEmail(e)] = struct{}{}
 	}
 	return d
+}
+
+// loadReview — REVIEW_* fayllarini o'qiydi. Fayl yo'q bo'lsa qiymat bo'sh (katalog mount qilingan, fayl
+// yaratilmagan holat). Boshqa o'qish xatosi (masalan ruxsat) — servis ishga tushmaydi.
+func (c *Config) loadReview() error {
+	code, err := readOptionalFile("REVIEW_OTP_CODE_FILE", c.ReviewOTPCodeFile)
+	if err != nil {
+		return err
+	}
+	phones, err := readOptionalFile("REVIEW_PHONES_FILE", c.ReviewPhonesFile)
+	if err != nil {
+		return err
+	}
+	c.ReviewOTPCode = strings.TrimSpace(code)
+	c.ReviewPhones = cleanList(strings.FieldsFunc(phones, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' }))
+	return nil
+}
+
+func readOptionalFile(name, path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s o'qilmadi: %w", name, err)
+	}
+	return string(b), nil
+}
+
+// validateReview — review qiymatlari ikkalasi birga bo'lishi va formati to'g'ri bo'lishi shart (fail closed).
+func (c Config) validateReview() []error {
+	hasCode, hasPhones := c.ReviewOTPCode != "", len(c.ReviewPhones) > 0
+	if !hasCode && !hasPhones {
+		return nil
+	}
+	var errs []error
+	if hasCode != hasPhones {
+		errs = append(errs, errors.New("REVIEW_OTP_CODE va REVIEW_PHONES birga berilishi kerak"))
+	}
+	if hasCode && (len(c.ReviewOTPCode) != auth.OTPLength || !digitsRe.MatchString(c.ReviewOTPCode)) {
+		errs = append(errs, fmt.Errorf("REVIEW_OTP_CODE aynan %d ta raqam bo'lishi kerak", auth.OTPLength))
+	}
+	for _, p := range c.ReviewPhones {
+		if !devPhoneRe.MatchString(p) {
+			errs = append(errs, errors.New("REVIEW_PHONES: har bir qiymat E.164 formatida bo'lishi kerak (+998901234567)"))
+			break
+		}
+	}
+	return errs
+}
+
+// ReviewOTP — auth.Options.Review uchun. Load muvaffaqiyatli bo'lsa qiymatlar tekshirilgan.
+func (c Config) ReviewOTP() auth.ReviewOTP {
+	if c.ReviewOTPCode == "" || len(c.ReviewPhones) == 0 {
+		return auth.ReviewOTP{}
+	}
+	r := auth.ReviewOTP{Code: c.ReviewOTPCode, Phones: map[string]struct{}{}}
+	for _, p := range c.ReviewPhones {
+		r.Phones[p] = struct{}{}
+	}
+	return r
 }
 
 // cleanList — vergul bilan ajratilgan qiymatlar: bo'sh joylar olib tashlanadi, bo'sh elementlar tashlab yuboriladi.

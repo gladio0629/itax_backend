@@ -150,8 +150,14 @@ services:
       DEV_OTP_CODE: ${DEV_OTP_CODE:-}
       DEV_TEST_PHONES: ${DEV_TEST_PHONES:-}
       DEV_TEST_EMAILS: ${DEV_TEST_EMAILS:-}
+      # Do'kon (App Store / Google Play) tekshiruvchisi akkaunti — production'da ham ishlaydi, SMS yuborilmaydi.
+      # Qiymatlar env'da emas, fayllarda: up.sh -> scripts/gen-secrets.sh .env dagi REVIEW_* ni shu yerga yozadi.
+      # Fayllar yo'q bo'lsa o'chiq. Katalog mount qilinadi (yo'q faylni bind-mount docker papka qilib yaratib qo'yadi).
+      REVIEW_OTP_CODE_FILE: /run/secrets/identity/REVIEW_OTP_CODE
+      REVIEW_PHONES_FILE: /run/secrets/identity/REVIEW_PHONES
     volumes:
       - ./secrets/jwt:/run/secrets/jwt:ro
+      - ./secrets/svc/identity:/run/secrets/identity:ro
     expose: ["8010"]
     healthcheck:
       test: ["CMD", "/identity", "healthcheck"]

@@ -15,6 +15,7 @@ func baseEnv(t *testing.T) {
 		"INTERNAL_TOKENS": "0123456789abcdef0123",
 		"APP_ENV":         "", "SMS_MODE": "", "EMAIL_MODE": "",
 		"DEV_MODE": "false", "DEV_OTP_CODE": "", "DEV_TEST_PHONES": "", "DEV_TEST_EMAILS": "",
+		"REVIEW_OTP_CODE_FILE": "", "REVIEW_PHONES_FILE": "",
 	} {
 		t.Setenv(k, v)
 	}

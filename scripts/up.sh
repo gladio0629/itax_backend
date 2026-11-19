@@ -15,6 +15,10 @@ if [[ ! -f secrets/jwt/private.pem || ! -f secrets/jwt/public.pem ]]; then
   "$ROOT/scripts/gen-jwt-keys.sh"
 fi
 
+# Servis sirlari fayllarda (secrets/svc/<servis>/): hozircha identity review akkaunti (REVIEW_PHONES, REVIEW_OTP_CODE).
+# .env dan o'qiydi; .env da bo'sh bo'lsa fayllarni o'chiradi. Xato bo'lsa (format) ishga tushirish to'xtaydi.
+"$ROOT/scripts/gen-secrets.sh" "$ROOT/.env" "$ROOT/secrets"
+
 # Avtomatik yaratiladigan maxfiy qiymatlar: faqat bo'sh (yoki 16 belgidan qisqa) bo'lsa to'ldiriladi.
 # Qiymat mavjud qatorning O'ZIGA yoziladi — .env dagi tartib va izohlar buzilmaydi; boshqa o'zgaruvchilarga tegilmaydi.
 fill_in_place() { # $1=nom $2=qiymat (faqat hex — sed uchun xavfsiz)

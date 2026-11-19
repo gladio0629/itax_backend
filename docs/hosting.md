@@ -62,6 +62,29 @@ Once all frontends use the subprotocol auth (`docs/websocket-events.md`), set `W
 On each of the 3 sites, set `VITE_API_URL=https://api.izgo.uz` and redeploy. The frontend build adds the API origin
 and its `wss://` form to the CSP `connect-src` itself.
 
+## 5. Store reviewer account (App Store / Google Play)
+
+Store reviewers can't receive SMS, so identity can give a few phone numbers a fixed OTP. This works in production
+(`DEV_MODE=false`, `SMS_MODE=real`), and no SMS is sent to these numbers.
+
+```
+# .env (not committed)
+REVIEW_PHONES=+998900000077
+REVIEW_OTP_CODE=<6 digits>
+```
+
+`scripts/up.sh` runs `scripts/gen-secrets.sh`, which writes these to `secrets/svc/identity/REVIEW_{PHONES,OTP_CODE}`.
+Compose mounts that directory read-only at `/run/secrets/identity`, and identity reads the files through
+`REVIEW_*_FILE`. When it is on, identity logs `review akkaunt yoqilgan` with the phone count at startup.
+
+- Only the passenger/driver login (`/api/v1/auth/otp/*`) uses the fixed code. Admin login never does, even if the
+  number belongs to a staff member.
+- Rate limits, the 3-attempt limit, TTL and cooldown still apply.
+- Use a number that no real subscriber owns, because anyone who knows the code can log in to that account.
+- To turn it off, empty both values and rerun `up.sh`: the files are deleted. Then restart identity.
+- If only one value is set, or the format is wrong, `gen-secrets.sh` stops `up.sh`. If the files are bad,
+  identity refuses to start.
+
 ## Checklist
 
 - [ ] DNS for `API_DOMAIN`; ports 80/443 open; Kong ports closed to the internet
@@ -69,6 +92,7 @@ and its `wss://` form to the CSP `connect-src` itself.
       `AUTO_APPROVE_ENABLED=false`, `MOCK_LOG_SMS_PARAMS=false`
 - [ ] `kong.yml` CORS origins: the 3 real frontend domains; placeholders removed
 - [ ] `WS_ALLOWED_ORIGINS`: the same 3 hosts
+- [ ] Store review: `REVIEW_PHONES` / `REVIEW_OTP_CODE` set only while a review is pending (section 5)
 - [ ] `docker compose --profile tls up -d`; `curl -I https://<API_DOMAIN>/api/v1/cities` → 200
 - [ ] Preflight check: `curl -i -X OPTIONS https://<API_DOMAIN>/api/v1/orders -H 'Origin: https://<client domain>' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: authorization,content-type,idempotency-key'`
       returns `Access-Control-Allow-Origin: https://<client domain>`
