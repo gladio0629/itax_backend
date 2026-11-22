@@ -13,7 +13,7 @@ func baseEnv(t *testing.T) {
 		"DB_PASSWORD": "x", "REDIS_URL": "redis://r:6379", "NATS_URL": "nats://n:4222",
 		"JWT_PRIVATE_KEY_PATH": "/k/priv.pem", "JWT_PUBLIC_KEY_PATH": "/k/pub.pem",
 		"INTERNAL_TOKENS": "0123456789abcdef0123",
-		"APP_ENV":         "", "SMS_MODE": "", "EMAIL_MODE": "",
+		"APP_ENV":         "", "SMS_MODE": "", "EMAIL_MODE": "", "SMS_PROVIDER": "",
 		"DEV_MODE": "false", "DEV_OTP_CODE": "", "DEV_TEST_PHONES": "", "DEV_TEST_EMAILS": "",
 		"REVIEW_OTP_CODE_FILE": "", "REVIEW_PHONES_FILE": "",
 	} {
@@ -117,5 +117,26 @@ func TestDevModeEmptyValueFailsStartup(t *testing.T) {
 	t.Setenv("DEV_MODE", "")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "DEV_MODE") {
 		t.Fatalf("bo'sh DEV_MODE: %v", err)
+	}
+}
+
+// SMS: default Eskiz; SMS_MODE=real bilan boshqa provayder nomi — servis ishga tushmaydi.
+func TestSMSProviderEskiz(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SMS_MODE", "real")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SMSProviderURL != "https://notify.eskiz.uz/api" {
+		t.Fatalf("default SMS_PROVIDER_URL = %q", c.SMSProviderURL)
+	}
+	t.Setenv("SMS_PROVIDER", "smsxabarnoma")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SMS_PROVIDER") {
+		t.Fatalf("noma'lum SMS_PROVIDER: %v", err)
+	}
+	t.Setenv("SMS_PROVIDER", "Eskiz")
+	if _, err := Load(); err != nil {
+		t.Fatalf("SMS_PROVIDER=Eskiz: %v", err)
 	}
 }

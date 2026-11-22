@@ -56,10 +56,13 @@ type Config struct {
 	AdminBootstrapPhone string `envconfig:"ADMIN_BOOTSTRAP_PHONE"`
 	AdminBootstrapName  string `envconfig:"ADMIN_BOOTSTRAP_NAME" default:"Superadmin"`
 
-	// SMS provayder (smsxabarnoma.uz). SMS_MODE=real va kalit bo'lsa yuboriladi, aks holda logga (mock).
-	SMSMode        string `envconfig:"SMS_MODE" default:"mock"`
-	SMSProviderURL string `envconfig:"SMS_PROVIDER_URL" default:"https://smsxabarnoma.uz/api/v1"`
-	SMSProviderKey string `envconfig:"SMS_PROVIDER_KEY"`
+	// SMS provayder (Eskiz.uz). SMS_MODE=real va email+parol bo'lsa yuboriladi, aks holda logga (mock).
+	// Eskiz tokeni Redis'da keshlanadi (29 kun); parol faqat login uchun.
+	SMSMode             string `envconfig:"SMS_MODE" default:"mock"`
+	SMSProvider         string `envconfig:"SMS_PROVIDER" default:"eskiz"`
+	SMSProviderURL      string `envconfig:"SMS_PROVIDER_URL" default:"https://notify.eskiz.uz/api"`
+	SMSProviderEmail    string `envconfig:"SMS_PROVIDER_EMAIL"`
+	SMSProviderPassword string `envconfig:"SMS_PROVIDER_PASSWORD"`
 
 	// Email provayder (Resend) — admin kirish kodi. EMAIL_MODE=real va kalit bo'lsa yuboriladi, aks holda logga.
 	EmailMode     string `envconfig:"EMAIL_MODE" default:"mock"`
@@ -153,8 +156,14 @@ func (c Config) validate() error {
 			errs = append(errs, fmt.Errorf("%s faqat mock yoki real bo'lishi mumkin", name))
 		}
 	}
-	if isReal(c.SMSMode) && strings.TrimSpace(c.SMSProviderURL) == "" {
-		errs = append(errs, errors.New("SMS_MODE=real uchun SMS_PROVIDER_URL kerak"))
+	if isReal(c.SMSMode) {
+		if strings.TrimSpace(c.SMSProviderURL) == "" {
+			errs = append(errs, errors.New("SMS_MODE=real uchun SMS_PROVIDER_URL kerak"))
+		}
+		// Bo'sh qiymat (compose'da `${SMS_PROVIDER:-}`) — default eskiz.
+		if p := strings.TrimSpace(c.SMSProvider); p != "" && !strings.EqualFold(p, "eskiz") {
+			errs = append(errs, errors.New("SMS_PROVIDER: hozircha faqat eskiz qo'llab-quvvatlanadi"))
+		}
 	}
 	if isReal(c.EmailMode) {
 		if !strings.EqualFold(strings.TrimSpace(c.EmailProvider), "resend") {

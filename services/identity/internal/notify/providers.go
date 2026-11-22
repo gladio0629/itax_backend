@@ -1,26 +1,24 @@
-// Package notify — OTP kodlarini yetkazuvchi tashqi provayderlar: SMS (smsxabarnoma.uz) va email (Resend).
-// Kalitlar faqat muhitdan keladi (SMS_PROVIDER_KEY, EMAIL_API_KEY); kodda va logda hech qachon ko'rinmaydi.
+// Package notify — OTP kodlarini yetkazuvchi tashqi provayderlar: SMS (Eskiz.uz) va email (Resend).
+// Maxfiy qiymatlar faqat muhitdan keladi (SMS_PROVIDER_EMAIL/SMS_PROVIDER_PASSWORD, EMAIL_API_KEY);
+// ular va provayder tokeni kodda va logda hech qachon ko'rinmaydi.
 package notify
 
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
 
 // Provayder javob kodlari bo'yicha xatolar (errors.Is bilan tekshiriladi).
 var (
-	ErrUnauthorized        = errors.New("provider: API kalit noto'g'ri (401)")
+	ErrUnauthorized        = errors.New("provider: avtorizatsiya xatosi (401)")
 	ErrInsufficientBalance = errors.New("provider: balans yetarli emas (402)")
 	ErrRateLimited         = errors.New("provider: limit tugagan (429)")
 	ErrInvalidPhone        = errors.New("notify: telefon 998XXXXXXXXX formatida bo'lishi kerak")
@@ -73,67 +71,6 @@ func NormalizePhone(p string) (string, error) {
 		return "", ErrInvalidPhone
 	}
 	return p, nil
-}
-
-// Ref — tashqi identifikator uchun barqaror, lekin telefonni oshkor qilmaydigan qisqa qiymat.
-func Ref(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:6])
-}
-
-// SMSXabarnoma — https://smsxabarnoma.uz/api/v1 mijoz.
-type SMSXabarnoma struct {
-	BaseURL string // SMS_PROVIDER_URL, masalan https://smsxabarnoma.uz/api/v1
-	APIKey  string // SMS_PROVIDER_KEY
-	HTTP    *http.Client
-}
-
-type smsRequest struct {
-	Phone          string `json:"phone"`
-	Text           string `json:"text"`
-	ExternalID     string `json:"externalId"`
-	IdempotencyKey string `json:"idempotencyKey"`
-}
-
-// SMSResult — provayder javobi. Cost turi hujjatda satr ("60"), shuning uchun xom saqlanadi.
-type SMSResult struct {
-	ID     string          `json:"id"`
-	Status string          `json:"status"`
-	Parts  int             `json:"parts"`
-	Cost   json.RawMessage `json:"cost"`
-}
-
-// Send — bitta SMS. externalID idempotencyKey sifatida ham ishlatiladi: bir xil kalit bilan qayta
-// yuborilgan so'rov provayderda ikkinchi SMS yaratmaydi.
-func (c *SMSXabarnoma) Send(ctx context.Context, phone, text, externalID string) (SMSResult, error) {
-	norm, err := NormalizePhone(phone)
-	if err != nil {
-		return SMSResult{}, err
-	}
-	body, err := json.Marshal(smsRequest{Phone: norm, Text: text, ExternalID: externalID, IdempotencyKey: externalID})
-	if err != nil {
-		return SMSResult{}, fmt.Errorf("smsxabarnoma: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/sms/send", bytes.NewReader(body))
-	if err != nil {
-		return SMSResult{}, fmt.Errorf("smsxabarnoma: %w", err)
-	}
-	req.Header.Set("X-API-Key", c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	var out SMSResult
-	if err := do(c.client(), req, "smsxabarnoma", &out); err != nil {
-		return SMSResult{}, err
-	}
-	return out, nil
-}
-
-func (c *SMSXabarnoma) client() *http.Client {
-	if c.HTTP != nil {
-		return c.HTTP
-	}
-	return &http.Client{Timeout: DefaultTimeout}
 }
 
 // ResendBaseURL — Resend API manzili (testlarda almashtiriladi).
@@ -199,9 +136,4 @@ func do(client *http.Client, req *http.Request, provider string, out any) error 
 	}
 	_ = json.Unmarshal(data, out)
 	return nil
-}
-
-// ExternalID — "<prefix>-<ref>-<unix ms>".
-func ExternalID(prefix, ref string, now time.Time) string {
-	return prefix + "-" + ref + "-" + strconv.FormatInt(now.UnixMilli(), 10)
 }

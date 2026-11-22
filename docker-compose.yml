@@ -133,10 +133,12 @@ services:
       ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-Superadmin}
       # Ichki API (/internal/identity/*) uchun X-Internal-Token; bo'sh bo'lsa servis ishga tushmaydi
       INTERNAL_TOKENS: ${INTERNAL_TOKENS:-}
-      # OTP SMS (smsxabarnoma.uz): SMS_MODE=real va kalit bo'lsa yuboriladi, aks holda logga (mock)
+      # OTP SMS (Eskiz.uz): SMS_MODE=real va email+parol bo'lsa yuboriladi, aks holda logga (mock). Token Redis'da keshlanadi.
       SMS_MODE: ${SMS_MODE:-mock}
-      SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-https://smsxabarnoma.uz/api/v1}
-      SMS_PROVIDER_KEY: ${SMS_PROVIDER_KEY:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-eskiz}
+      SMS_PROVIDER_URL: ${SMS_PROVIDER_URL:-https://notify.eskiz.uz/api}
+      SMS_PROVIDER_EMAIL: ${SMS_PROVIDER_EMAIL:-}
+      SMS_PROVIDER_PASSWORD: ${SMS_PROVIDER_PASSWORD:-}
       # Admin email kodi (Resend): EMAIL_MODE=real va kalit bo'lsa yuboriladi, aks holda logga (mock)
       EMAIL_MODE: ${EMAIL_MODE:-mock}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}

@@ -114,9 +114,11 @@ func run(log *slog.Logger) error {
 	repo := postgres.NewRepo(pool)
 	relay := events.NewRelay(repo, pub2, log)
 
-	// SMS/email: SMS_MODE / EMAIL_MODE = real va kalit bo'lsa provayder, aks holda logga (mock).
+	// SMS (Eskiz) / email (Resend): SMS_MODE / EMAIL_MODE = real va maxfiy qiymatlar bo'lsa provayder, aks holda logga (mock).
 	notifier := notify.New(notify.Config{
-		SMSMode: cfg.SMSMode, SMSProviderURL: cfg.SMSProviderURL, SMSProviderKey: cfg.SMSProviderKey,
+		SMSMode: cfg.SMSMode, SMSProviderURL: cfg.SMSProviderURL,
+		SMSProviderEmail: cfg.SMSProviderEmail, SMSProviderPassword: cfg.SMSProviderPassword,
+		SMSTokens: cache.NewEskizToken(rdb),
 		EmailMode: cfg.EmailMode, EmailProvider: cfg.EmailProvider, EmailAPIKey: cfg.EmailAPIKey, EmailFrom: cfg.EmailFrom,
 		OTPTTL: cfg.OTPTTL,
 	}, auth.LogNotifier{Log: log}, log)

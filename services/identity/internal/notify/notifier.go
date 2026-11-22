@@ -22,9 +22,12 @@ type Fallback interface {
 
 // Config — main.go config.Config dan to'ldiradi.
 type Config struct {
-	SMSMode        string
-	SMSProviderURL string
-	SMSProviderKey string
+	SMSMode             string
+	SMSProviderURL      string // Eskiz API manzili; bo'sh bo'lsa EskizBaseURL
+	SMSProviderEmail    string
+	SMSProviderPassword string
+	// SMSTokens — Eskiz token keshi (main: Redis). nil bo'lsa jarayon ichidagi MemTokenStore.
+	SMSTokens TokenStore
 
 	EmailMode     string
 	EmailProvider string
@@ -37,29 +40,40 @@ type Config struct {
 
 // Notifier — auth.Notifier: har bir kanal alohida real yoki mock (Fallback).
 type Notifier struct {
-	sms      *SMSXabarnoma // nil => mock
-	email    *Resend       // nil => mock
+	sms      *Eskiz  // nil => mock
+	email    *Resend // nil => mock
 	fallback Fallback
 	ttl      time.Duration
 	log      *slog.Logger
-	now      func() time.Time
 }
 
-// UseReal — real rejim faqat mode=real VA kalit bo'sh bo'lmaganda.
-func UseReal(mode, key string) bool {
-	return strings.EqualFold(strings.TrimSpace(mode), ModeReal) && strings.TrimSpace(key) != ""
+// UseReal — real rejim faqat mode=real VA barcha maxfiy qiymatlar (kalit / email+parol) bo'sh bo'lmaganda.
+func UseReal(mode string, secrets ...string) bool {
+	if !strings.EqualFold(strings.TrimSpace(mode), ModeReal) || len(secrets) == 0 {
+		return false
+	}
+	for _, s := range secrets {
+		if strings.TrimSpace(s) == "" {
+			return false
+		}
+	}
+	return true
 }
 
-// New — rejimni aniqlaydi. mode=real, lekin kalit bo'sh bo'lsa: ogohlantirish va mock (servis to'xtamaydi).
+// New — rejimni aniqlaydi. mode=real, lekin kalit/parol bo'sh bo'lsa: ogohlantirish va mock (servis to'xtamaydi).
 func New(cfg Config, fallback Fallback, log *slog.Logger) *Notifier {
-	n := &Notifier{fallback: fallback, ttl: cfg.OTPTTL, log: log, now: time.Now}
+	n := &Notifier{fallback: fallback, ttl: cfg.OTPTTL, log: log}
 
-	if UseReal(cfg.SMSMode, cfg.SMSProviderKey) {
-		n.sms = &SMSXabarnoma{BaseURL: cfg.SMSProviderURL, APIKey: cfg.SMSProviderKey}
-		log.Info("SMS provayder: real (smsxabarnoma.uz)")
+	if UseReal(cfg.SMSMode, cfg.SMSProviderEmail, cfg.SMSProviderPassword) {
+		tokens := cfg.SMSTokens
+		if tokens == nil {
+			tokens = &MemTokenStore{}
+		}
+		n.sms = &Eskiz{BaseURL: cfg.SMSProviderURL, Email: cfg.SMSProviderEmail, Password: cfg.SMSProviderPassword, Tokens: tokens}
+		log.Info("SMS provayder: real (eskiz.uz)")
 	} else {
 		if strings.EqualFold(strings.TrimSpace(cfg.SMSMode), ModeReal) {
-			log.Warn("SMS_MODE=real, lekin SMS_PROVIDER_KEY bo'sh: SMS mock rejimda (logga yoziladi)")
+			log.Warn("SMS_MODE=real, lekin SMS_PROVIDER_EMAIL yoki SMS_PROVIDER_PASSWORD bo'sh: SMS mock rejimda (logga yoziladi)")
 		}
 		log.Info("SMS provayder: mock")
 	}
@@ -98,14 +112,12 @@ func (n *Notifier) SendSMS(ctx context.Context, phone, code string) error {
 	if n.sms == nil {
 		return n.fallback.SendSMS(ctx, phone, code)
 	}
-	id := ExternalID("otp", Ref(phone), n.now())
-	res, err := n.sms.Send(ctx, phone, SMSText(code), id)
+	res, err := n.sms.Send(ctx, phone, SMSText(code))
 	if err != nil {
-		n.log.WarnContext(ctx, "SMS yuborilmadi", "phone", MaskPhone(phone), "external_id", id, "err", err)
+		n.log.WarnContext(ctx, "SMS yuborilmadi", "phone", MaskPhone(phone), "err", err)
 		return err
 	}
-	n.log.InfoContext(ctx, "SMS yuborildi", "phone", MaskPhone(phone), "external_id", id,
-		"provider_id", res.ID, "status", res.Status, "parts", res.Parts)
+	n.log.InfoContext(ctx, "SMS yuborildi", "phone", MaskPhone(phone), "provider_id", res.ID, "status", res.Status)
 	return nil
 }
 

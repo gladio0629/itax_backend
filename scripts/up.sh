@@ -45,8 +45,8 @@ if ! grep -Eq '^POSTGRES_USER=.+' .env && [[ -z "${POSTGRES_USER:-}" ]]; then
 fi
 
 # SMS / Email: rejim bo'sh bo'lsa compose va servis mock ishlatadi. real + bo'sh kalit ham mock — faqat ogohlantiramiz.
-if grep -Eq '^SMS_MODE=real[[:space:]]*$' .env && ! grep -Eq '^SMS_PROVIDER_KEY=.+' .env; then
-  echo "up.sh: OGOHLANTIRISH: SMS_MODE=real, lekin SMS_PROVIDER_KEY bo'sh — SMS mock rejimda ishlaydi" >&2
+if grep -Eq '^SMS_MODE=real[[:space:]]*$' .env && ! { grep -Eq '^SMS_PROVIDER_EMAIL=.+' .env && grep -Eq '^SMS_PROVIDER_PASSWORD=.+' .env; }; then
+  echo "up.sh: OGOHLANTIRISH: SMS_MODE=real, lekin SMS_PROVIDER_EMAIL yoki SMS_PROVIDER_PASSWORD bo'sh — identity SMS mock rejimda ishlaydi" >&2
 fi
 if grep -Eq '^EMAIL_MODE=real[[:space:]]*$' .env && ! grep -Eq '^EMAIL_API_KEY=.+' .env; then
   echo "up.sh: OGOHLANTIRISH: EMAIL_MODE=real, lekin EMAIL_API_KEY bo'sh — email mock rejimda ishlaydi" >&2
