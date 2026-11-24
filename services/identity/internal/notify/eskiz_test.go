@@ -152,7 +152,7 @@ func TestEskizSendRequestShape(t *testing.T) {
 	if !strings.HasPrefix(f.lastCType, "multipart/form-data") {
 		t.Errorf("Content-Type = %q", f.lastCType)
 	}
-	want := map[string]string{"mobile_phone": "998901234567", "message": "IZGO tasdiqlash kodi: 123456", "from": "4546"}
+	want := map[string]string{"mobile_phone": "998901234567", "message": "NURGROUP platformasida parolni tiklash uchun tasdiqlash kodi: 123456", "from": "4546"}
 	for k, v := range want {
 		if f.lastForm[k] != v {
 			t.Errorf("%s = %q, want %q", k, f.lastForm[k], v)
@@ -192,7 +192,7 @@ func TestEskiz401Relogin(t *testing.T) {
 	if got, _ := store.Get(context.Background()); got != "tok-2" {
 		t.Fatalf("keshdagi token = %q, want tok-2", got)
 	}
-	if f.lastForm["message"] != "IZGO tasdiqlash kodi: 222222" || f.lastAuth != "Bearer tok-2" {
+	if f.lastForm["message"] != "NURGROUP platformasida parolni tiklash uchun tasdiqlash kodi: 222222" || f.lastAuth != "Bearer tok-2" {
 		t.Fatalf("qayta yuborish: auth=%q form=%v", f.lastAuth, f.lastForm)
 	}
 }

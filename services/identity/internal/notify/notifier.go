@@ -94,8 +94,11 @@ func New(cfg Config, fallback Fallback, log *slog.Logger) *Notifier {
 func (n *Notifier) SMSReal() bool   { return n.sms != nil }
 func (n *Notifier) EmailReal() bool { return n.email != nil }
 
-// SMSText — OTP SMS matni.
-func SMSText(code string) string { return "IZGO tasdiqlash kodi: " + code }
+// SMSText — OTP SMS matni. Eskiz.uz da tasdiqlangan shablon bilan aynan mos bo'lishi shart:
+// boshqa matn bilan SMS yuborilmaydi.
+func SMSText(code string) string {
+	return "NURGROUP platformasida parolni tiklash uchun tasdiqlash kodi: " + code
+}
 
 // EmailSubject / EmailText — admin kirish kodi xati.
 const EmailSubject = "IZGO Admin - kirish kodi"

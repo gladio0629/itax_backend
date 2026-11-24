@@ -19,7 +19,8 @@ type Template struct {
 
 // Templates — SMS matnlari (uz). Yangi shablon shu yerga qo'shiladi.
 var Templates = map[string]Template{
-	"otp":         {Text: "IZGO: tasdiqlash kodi {code}. Hech kimga bermang.", Required: []string{"code"}},
+	// otp — Eskiz.uz da tasdiqlangan shablon bilan aynan mos bo'lishi shart: boshqa matn bilan SMS yuborilmaydi.
+	"otp":         {Text: "NURGROUP platformasida parolni tiklash uchun tasdiqlash kodi: {code}", Required: []string{"code"}},
 	"admin_login": {Text: "IZGO admin: kirish kodi {code}.", Required: []string{"code"}},
 }
 
